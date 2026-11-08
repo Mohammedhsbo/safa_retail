@@ -37,7 +37,7 @@ export class AccessControlService {
     if (
       !principal ||
       !(await this.repository.hasActiveBranch(branchId, executor)) ||
-      (!principal.roleCodes.includes('system_owner') &&
+      (!this.isGlobalBranchAdmin(principal.roleCodes) &&
         !(await this.repository.hasBranchAccess(userId, branchId, executor)))
     ) {
       throw new AuthorizationError('The user cannot access this branch')
@@ -56,7 +56,7 @@ export class AccessControlService {
       throw new AuthorizationError('The user is not active')
     }
 
-    if (principal.roleCodes.includes('system_owner')) {
+    if (this.isGlobalBranchAdmin(principal.roleCodes)) {
       const actualBranchId = await this.repository.getWarehouseBranch(
         warehouseId,
         executor,
@@ -90,5 +90,11 @@ export class AccessControlService {
   ): Promise<void> {
     await this.assertPermission(userId, permission, executor)
     await this.assertWarehouseAccess(userId, warehouseId, branchId, executor)
+  }
+
+  private isGlobalBranchAdmin(roleCodes: readonly string[]): boolean {
+    return roleCodes.some((role) =>
+      ['system_owner', 'general_manager', 'admin'].includes(role),
+    )
   }
 }

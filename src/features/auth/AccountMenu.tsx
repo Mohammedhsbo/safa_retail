@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, LogOut, MapPin, ShieldCheck, UserRound } from 'lucide-react'
+import { ChevronDown, LogOut, ShieldCheck, UserRound } from 'lucide-react'
 import type { AuthenticatedUser } from '@safa/types'
 
 type AccountMenuProps = {
   user: AuthenticatedUser
-  onChangeLocation: () => void
   onLogout: () => Promise<void>
 }
 
-export function AccountMenu({ user, onChangeLocation, onLogout }: AccountMenuProps) {
+export function AccountMenu({ user, onLogout }: AccountMenuProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const menuRef = useRef<HTMLDivElement>(null)
@@ -89,18 +88,6 @@ export function AccountMenu({ user, onChangeLocation, onLogout }: AccountMenuPro
           >
             <UserRound aria-hidden="true" className="text-[var(--brand)]" size={18} />
             <span>{t('accountMenu.profile')}</span>
-          </button>
-          <button
-            className="flex min-h-12 w-full items-center gap-3 rounded-2xl px-3 text-start text-sm font-semibold text-[var(--ink)] transition hover:bg-[var(--surface)]"
-            onClick={() => {
-              setMenuOpen(false)
-              onChangeLocation()
-            }}
-            role="menuitem"
-            type="button"
-          >
-            <MapPin aria-hidden="true" className="text-[var(--brand)]" size={18} />
-            <span>{t('navigation.changeLocation')}</span>
           </button>
           <div className="my-1 border-t border-[var(--border)]" />
           <button

@@ -11,6 +11,7 @@ import { RoleManagementService } from '../auth/RoleManagementService'
 import { UserManagementService } from '../auth/UserManagementService'
 import type { PasswordHasher } from '../auth/auth.types'
 import { ProductCatalogService } from './ProductCatalogService'
+import { OrganizationService } from '../organization/OrganizationService'
 
 class TestPasswordHasher implements PasswordHasher {
   async hash(password: string): Promise<string> {
@@ -25,6 +26,8 @@ class TestPasswordHasher implements PasswordHasher {
 let database: SqliteDatabase
 let ownerId: string
 let catalog: ProductCatalogService
+let organization: OrganizationService
+let branchId: string
 let passwordHasher: PasswordHasher
 let authentication: AuthenticationService
 let units: Record<string, string>
@@ -78,7 +81,7 @@ async function createProduct(
     minimumStock: '2.125',
     status: 'active',
     ...overrides,
-  })
+  }, branchId)
 }
 
 beforeEach(async () => {
@@ -88,8 +91,13 @@ beforeEach(async () => {
   passwordHasher = new TestPasswordHasher()
   authentication = new AuthenticationService(database, passwordHasher)
   catalog = new ProductCatalogService(database)
+  organization = new OrganizationService(database)
   ownerId = ''
   await createOwner()
+  branchId = await organization.createBranch(ownerId, {
+    code: 'catalog',
+    name: 'Catalog Branch',
+  })
   await catalog.initializeStandardUnits(ownerId)
   const allUnits = await catalog.listUnits(ownerId)
   units = Object.fromEntries(allUnits.map((unit) => [unit.code, unit.id]))
@@ -152,7 +160,7 @@ describe('product catalog', () => {
         purchasePrice: '1',
         sellingPrice: '2',
         minimumStock: '0',
-      }),
+      }, branchId),
     ).rejects.toThrow(/category must be active/)
   })
 
@@ -415,5 +423,35 @@ describe('product catalog', () => {
     )
     expect(audits.map((row) => row.action)).toContain('category.created')
     expect(audits.map((row) => row.action)).toContain('product.created')
+  })
+
+  it('limits product availability and catalog reads to the selected authorized branch', async () => {
+    const secondBranchId = await organization.createBranch(ownerId, {
+      code: 'catalog-2',
+      name: 'Second Catalog Branch',
+    })
+    const productId = await createProduct({ sku: 'BRANCH-ONLY' })
+    expect(await catalog.listProducts(ownerId, branchId)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: productId })]),
+    )
+    expect(await catalog.listProducts(ownerId, secondBranchId)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: productId })]),
+    )
+    await expect(
+      catalog.getProduct(ownerId, productId, secondBranchId),
+    ).resolves.toBeNull()
+
+    const employeeId = await createEmployee('branch-reader', ['products.read'])
+    await new UserManagementService(database, passwordHasher).setUserAccess(
+      ownerId,
+      employeeId,
+      [branchId],
+      [],
+    )
+    await expect(
+      catalog.listProducts(employeeId, secondBranchId),
+    ).rejects.toThrow(AuthorizationError)
+    await expect(catalog.getProduct(employeeId, productId, branchId))
+      .resolves.toMatchObject({ id: productId })
   })
 })

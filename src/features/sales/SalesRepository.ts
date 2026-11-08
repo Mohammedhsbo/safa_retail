@@ -12,7 +12,9 @@ export class SalesRepository {
     executor: SqlExecutor = this.database,
   ): Promise<SqlRow | null> {
     const [row] = await executor.query(
-      `SELECT w.id, w.branch_id, w.status AS warehouse_status,
+      `SELECT w.id, w.branch_id,
+              CASE WHEN w.status = 'active' AND w.is_active = FALSE THEN 'inactive'
+                   ELSE w.status END AS warehouse_status,
               b.status AS branch_status
        FROM warehouses w JOIN branches b ON b.id = w.branch_id
        WHERE w.id = ?`,
@@ -72,13 +74,16 @@ export class SalesRepository {
   ): Promise<SqlRow[]> {
     const pattern = `%${query}%`
     return executor.query(
-      `SELECT p.id, p.sku, p.name, p.base_unit_id, p.selling_price,
+      `SELECT p.id, p.sku, p.name, p.base_unit_id, a.selling_price,
               u.name AS base_unit_name, COALESCE(ib.on_hand_quantity, '0') AS stock,
               (SELECT pb.barcode FROM product_barcodes pb
                WHERE pb.product_id = p.id AND pb.barcode = ? LIMIT 1) AS barcode,
               (SELECT pb.unit_id FROM product_barcodes pb
                WHERE pb.product_id = p.id AND pb.barcode = ? LIMIT 1) AS barcode_unit_id
        FROM products p
+       JOIN warehouses w ON w.id = ? AND w.status = 'active' AND w.is_active = TRUE
+       JOIN product_branch_availability a
+         ON a.product_id = p.id AND a.branch_id = w.branch_id AND a.status = 'active'
        JOIN measurement_units u ON u.id = p.base_unit_id
        LEFT JOIN inventory_balances ib
          ON ib.product_id = p.id AND ib.warehouse_id = ?
@@ -92,7 +97,7 @@ export class SalesRepository {
          WHERE pb.product_id = p.id AND pb.barcode = ?
        ) THEN 0 ELSE 1 END, p.name, p.sku
        LIMIT ?`,
-      [query, query, warehouseId, query, pattern, pattern, query, query, limit],
+      [query, query, warehouseId, warehouseId, query, pattern, pattern, query, query, limit],
     )
   }
 

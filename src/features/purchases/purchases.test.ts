@@ -95,6 +95,7 @@ beforeEach(async () => {
     branchId,
     code: 'main',
     name: 'Main Warehouse',
+    warehouseType: 'fabrics',
   })
   supplierId = await purchases.createSupplier(ownerId, {
     code: 'SUP-001',
@@ -109,7 +110,7 @@ beforeEach(async () => {
     purchasePrice: '5',
     sellingPrice: '10',
     minimumStock: '0',
-  })
+  }, branchId)
 })
 
 afterEach(async () => {
@@ -212,7 +213,7 @@ describe('suppliers and purchase workflows', () => {
       sellingPrice: '10',
       minimumStock: '0',
       conversions: [{ unitId: carton.id, factorToBase: '4' }],
-    })
+    }, branchId)
     const purchaseId = await purchases.createPurchase(ownerId, {
       warehouseId,
       supplierId,

@@ -110,6 +110,7 @@ beforeEach(async () => {
     branchId,
     code: 'factory',
     name: 'Factory Warehouse',
+    warehouseType: 'clothing_manufacturing',
   })
   finishedProductId = await catalog.createProduct(ownerId, {
     sku: 'FINISHED-001',
@@ -118,7 +119,7 @@ beforeEach(async () => {
     purchasePrice: '0',
     sellingPrice: '20',
     minimumStock: '0',
-  })
+  }, branchId)
   rawMaterialId = await catalog.createProduct(ownerId, {
     sku: 'RAW-001',
     name: 'Raw Material',
@@ -126,7 +127,7 @@ beforeEach(async () => {
     purchasePrice: '4',
     sellingPrice: '6',
     minimumStock: '0',
-  })
+  }, branchId)
 })
 
 afterEach(async () => {
@@ -281,7 +282,7 @@ describe('manufacturing orders', () => {
       purchasePrice: '2',
       sellingPrice: '3',
       minimumStock: '0',
-    })
+    }, branchId)
     const orderId = await manufacturing.createOrder(ownerId, {
       warehouseId,
       finishedProductId,

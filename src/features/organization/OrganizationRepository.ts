@@ -104,6 +104,24 @@ export class OrganizationRepository {
     )
   }
 
+  async seedBranchProductAvailability(
+    branchId: string,
+    createdAt: string,
+    executor: SqlExecutor = this.database,
+  ): Promise<void> {
+    await executor.run(
+      `INSERT INTO product_branch_availability
+         (product_id, branch_id, purchase_price, selling_price, minimum_stock,
+          status, created_at, updated_at)
+       SELECT id, ?, purchase_price, selling_price, minimum_stock,
+              CASE WHEN status = 'active' THEN 'active' ELSE 'inactive' END,
+              ?, ?
+       FROM products
+       WHERE status <> 'archived'`,
+      [branchId, createdAt, createdAt],
+    )
+  }
+
   async updateBranch(
     branchId: string,
     input: {
@@ -145,7 +163,10 @@ export class OrganizationRepository {
     executor: SqlExecutor = this.database,
   ): Promise<SqlRow[]> {
     return executor.query(
-      `SELECT id, branch_id, code, name, status, created_at, updated_at
+      `SELECT id, branch_id, code, name, warehouse_type, address, description,
+              CASE WHEN status = 'active' AND is_active = FALSE THEN 'inactive'
+                   ELSE status END AS status,
+              created_at, updated_at
        FROM warehouses ORDER BY branch_id, code`,
     )
   }
@@ -155,7 +176,10 @@ export class OrganizationRepository {
     executor: SqlExecutor = this.database,
   ): Promise<SqlRow[]> {
     return executor.query(
-      `SELECT id, branch_id, code, name, status, created_at, updated_at
+      `SELECT id, branch_id, code, name, warehouse_type, address, description,
+              CASE WHEN status = 'active' AND is_active = FALSE THEN 'inactive'
+                   ELSE status END AS status,
+              created_at, updated_at
        FROM warehouses WHERE branch_id = ? ORDER BY code`,
       [branchId],
     )
@@ -166,7 +190,10 @@ export class OrganizationRepository {
     executor: SqlExecutor = this.database,
   ): Promise<SqlRow | null> {
     const [row] = await executor.query(
-      `SELECT id, branch_id, code, name, status, created_at, updated_at
+      `SELECT id, branch_id, code, name, warehouse_type, address, description,
+              CASE WHEN status = 'active' AND is_active = FALSE THEN 'inactive'
+                   ELSE status END AS status,
+              created_at, updated_at
        FROM warehouses WHERE id = ?`,
       [warehouseId],
     )
@@ -179,19 +206,28 @@ export class OrganizationRepository {
       branchId: string
       code: string
       name: string
+      warehouseType: string
+      address: string | null
+      description: string | null
+      status: 'active' | 'inactive'
       createdAt: string
     },
     executor: SqlExecutor = this.database,
   ): Promise<void> {
     await executor.run(
       `INSERT INTO warehouses
-         (id, branch_id, code, name, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'active', ?, ?)`,
+         (id, branch_id, code, name, warehouse_type, address, description,
+          is_active, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 1 THEN TRUE ELSE FALSE END, 'active', ?, ?)`,
       [
         input.id,
         input.branchId,
         input.code,
         input.name,
+        input.warehouseType,
+        input.address,
+        input.description,
+        input.status === 'active' ? 1 : 0,
         input.createdAt,
         input.createdAt,
       ],
@@ -200,15 +236,35 @@ export class OrganizationRepository {
 
   async updateWarehouse(
     warehouseId: string,
-    input: { branchId: string; code: string; name: string },
+    input: {
+      branchId: string
+      code: string
+      name: string
+      warehouseType: string
+      address?: string | null | undefined
+      description?: string | null | undefined
+      status: 'active' | 'inactive'
+    },
     updatedAt: string,
     executor: SqlExecutor = this.database,
   ): Promise<void> {
     await executor.run(
       `UPDATE warehouses
-       SET branch_id = ?, code = ?, name = ?, updated_at = ?
+       SET branch_id = ?, code = ?, name = ?, warehouse_type = ?, address = ?,
+           description = ?, is_active = CASE WHEN ? = 1 THEN TRUE ELSE FALSE END,
+           updated_at = ?
        WHERE id = ? AND status = 'active'`,
-      [input.branchId, input.code, input.name, updatedAt, warehouseId],
+      [
+        input.branchId,
+        input.code,
+        input.name,
+        input.warehouseType,
+        input.address ?? null,
+        input.description ?? null,
+        input.status === 'active' ? 1 : 0,
+        updatedAt,
+        warehouseId,
+      ],
     )
   }
 

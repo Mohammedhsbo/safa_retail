@@ -79,6 +79,7 @@ beforeEach(async () => {
     branchId,
     code: 'main',
     name: 'Main Warehouse',
+    warehouseType: 'fabrics',
   })
   otherBranchId = await organization.createBranch(ownerId, {
     code: 'south',
@@ -88,6 +89,7 @@ beforeEach(async () => {
     branchId: otherBranchId,
     code: 'main',
     name: 'South Warehouse',
+    warehouseType: 'fabrics',
   })
   productId = await catalog.createProduct(ownerId, {
     sku: 'REPORT-ITEM',
@@ -96,7 +98,7 @@ beforeEach(async () => {
     purchasePrice: '4',
     sellingPrice: '10',
     minimumStock: '18',
-  })
+  }, branchId)
   const now = new Date().toISOString()
   reportDate = now.slice(0, 10)
   customerId = createUuid()
@@ -215,6 +217,7 @@ describe('business reports', () => {
       quantity: '18',
       minimumStock: '18',
       inventoryValue: '72',
+      warehouseTypes: 'fabrics',
     })])
     expect(report.branches).toEqual([expect.objectContaining({ id: branchId })])
   })
@@ -386,7 +389,7 @@ describe('business reports', () => {
       purchasePrice: '4',
       sellingPrice: '5',
       minimumStock: '0',
-    })
+    }, branchId)
     await inventory.adjustStock(ownerId, {
       productId: rawMaterialId,
       warehouseId,

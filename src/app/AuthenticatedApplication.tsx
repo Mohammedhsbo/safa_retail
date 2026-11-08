@@ -105,9 +105,14 @@ export function AuthenticatedApplication({
 
   return (
     <Routes>
-      <Route path="/login" element={<Navigate replace to="/dashboard" />} />
+      <Route path="/login" element={<Navigate replace to="/branch-selection" />} />
       <Route path="/branch-selection" element={<BranchSelectionScreen />} />
-      <Route path="/warehouse-selection" element={<WarehouseSelectionScreen />} />
+      <Route
+        path="/warehouse-selection"
+        element={branchId
+          ? <WarehouseSelectionScreen />
+          : <Navigate replace to="/branch-selection" />}
+      />
       <Route element={<WorkspaceGuard branchId={branchId} warehouseId={warehouseId} />}>
         <Route element={<AuthenticatedLayout />}>
           <Route path="/branches" element={<BranchesManagementScreen />} />
@@ -235,20 +240,135 @@ function WorkspaceGuard({
   branchId: string | null
   warehouseId: string | null
 }) {
+  const { t } = useTranslation()
   const { pathname } = useLocation()
-  if (pathname === '/dashboard' || pathname === '/profile' || pathname === '/branches') return <Outlet />
+  const { organization } = useRetailApplicationServices()
+  const user = useSessionStore((state) => state.user)
+  const clearWorkspace = useWorkspaceStore((state) => state.clearWorkspace)
+  const clearWarehouse = useWorkspaceStore((state) => state.clearWarehouse)
+  const [validation, setValidation] = useState<{
+    key: string
+    status: 'checking' | 'valid' | 'error'
+    message?: string
+  } | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const key = `${pathname}:${branchId ?? ''}:${warehouseId ?? ''}`
+
+  useEffect(() => {
+    if (!user || !branchId || !warehouseId) return
+    let active = true
+    void (async () => {
+      try {
+        const branches = await organization.listAccessibleBranches(user.id)
+        if (!active) return
+        if (!branches.some((branch) => branch.id === branchId)) {
+          clearWorkspace()
+          return
+        }
+        const warehouses = await organization.listAccessibleWarehouses(
+          user.id,
+          branchId,
+        )
+        if (!active) return
+        if (!warehouses.some((warehouse) =>
+          warehouse.id === warehouseId &&
+          warehouse.branchId === branchId &&
+          warehouse.status === 'active',
+        )) {
+          clearWarehouse()
+          return
+        }
+        if (active) setValidation({ key, status: 'valid' })
+      } catch (error) {
+        if (active) {
+          setValidation({
+            key,
+            status: 'error',
+            message: error instanceof Error ? error.message : 'Workspace validation failed',
+          })
+        }
+      }
+    })()
+    return () => { active = false }
+  }, [
+    attempt,
+    branchId,
+    clearWarehouse,
+    clearWorkspace,
+    key,
+    organization,
+    user,
+    warehouseId,
+  ])
+
   if (!branchId) return <Navigate replace to="/branch-selection" />
   if (!warehouseId) return <Navigate replace to="/warehouse-selection" />
+  if (!user) return <Navigate replace to="/login" />
+  if (validation?.key !== key || validation.status === 'checking') {
+    return <main className="p-6 text-center text-sm text-[var(--muted)]" role="status">
+      {t('locations.validating')}
+    </main>
+  }
+  if (validation.status === 'error') {
+    return (
+      <main className="mx-auto max-w-xl space-y-3 p-6">
+        <ToastError error={validation.message ?? ''} />
+        <p className="rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">
+          {validation.message}
+        </p>
+        <button
+          className="min-h-11 rounded-xl bg-[var(--brand)] px-4 font-bold text-white"
+          onClick={() => {
+            setValidation(null)
+            setAttempt((value) => value + 1)
+          }}
+          type="button"
+        >
+          {t('common.retry')}
+        </button>
+      </main>
+    )
+  }
+  if (validation.status !== 'valid') return null
   return <Outlet />
 }
 
 function AuthenticatedLayout() {
   const { t, i18n } = useTranslation()
-  const navigate = useNavigate()
-  const { authentication } = useRetailApplicationServices()
+  const { authentication, organization } = useRetailApplicationServices()
   const user = useSessionStore((state) => state.user)
   const clearWorkspace = useWorkspaceStore((state) => state.clearWorkspace)
+  const { branchId, warehouseId } = useWorkspaceStore()
   const [logoutError, setLogoutError] = useState('')
+  const [workspaceLabel, setWorkspaceLabel] = useState('')
+  const [workspaceError, setWorkspaceError] = useState('')
+  useEffect(() => {
+    let active = true
+    const loadLabel = async (): Promise<void> => {
+      if (!user || !branchId) {
+        setWorkspaceLabel('')
+        setWorkspaceError('')
+        return
+      }
+      try {
+        const [branches, warehouses] = await Promise.all([
+          organization.listAccessibleBranches(user.id),
+          organization.listAccessibleWarehouses(user.id, branchId),
+        ])
+        if (!active) return
+        const branchName = branches.find((branch) => branch.id === branchId)?.name
+        const warehouseName = warehouses.find((warehouse) => warehouse.id === warehouseId)?.name
+        setWorkspaceLabel([branchName, warehouseName].filter(Boolean).join(' · '))
+        setWorkspaceError('')
+      } catch (error) {
+        if (active) {
+          setWorkspaceError(error instanceof Error ? error.message : t('locations.loadFailed'))
+        }
+      }
+    }
+    void loadLabel()
+    return () => { active = false }
+  }, [branchId, organization, t, user, warehouseId])
   if (!user) return <Navigate replace to="/login" />
 
   const navigation = [
@@ -279,9 +399,9 @@ function AuthenticatedLayout() {
 
   const logout = async (): Promise<void> => {
     setLogoutError('')
+    clearWorkspace()
     try {
       await authentication.logout()
-      clearWorkspace()
     } catch (error) {
       setLogoutError(error instanceof Error ? error.message : t('auth.logoutFailed'))
     }
@@ -306,9 +426,13 @@ function AuthenticatedLayout() {
               </span>
             </Link>
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            {workspaceLabel && (
+              <span className="hidden max-w-56 truncate rounded-xl bg-[var(--brand-wash)] px-3 py-2 text-xs font-bold text-[var(--brand)] md:block">
+                {workspaceLabel}
+              </span>
+            )}
             <LanguageSwitcher />
               <AccountMenu
-                onChangeLocation={() => navigate('/branch-selection')}
                 onLogout={logout}
                 user={user}
               />
@@ -336,7 +460,7 @@ function AuthenticatedLayout() {
           </nav>
         </div>
       </header>
-      {logoutError && <><ToastError error={logoutError} /><p className="mx-auto mt-3 max-w-7xl rounded-xl bg-red-50 p-3 text-sm text-red-800" role="alert">{logoutError}</p></>}
+      {(logoutError || workspaceError) && <><ToastError error={logoutError || workspaceError} /><p className="mx-auto mt-3 max-w-7xl rounded-xl bg-red-50 p-3 text-sm text-red-800" role="alert">{logoutError || workspaceError}</p></>}
       <Outlet />
     </div>
   )

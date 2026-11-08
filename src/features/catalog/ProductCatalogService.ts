@@ -594,9 +594,15 @@ export class ProductCatalogService {
     })
   }
 
-  async listProducts(actorId: string): Promise<CatalogProduct[]> {
+  async listProducts(
+    actorId: string,
+    branchId?: string,
+  ): Promise<CatalogProduct[]> {
     await this.access.assertPermission(actorId, 'products.read')
-    const rows = await this.repository.listProducts()
+    if (branchId) await this.assertProductBranchAccess(actorId, branchId)
+    const rows = branchId
+      ? await this.repository.listProductsForBranch(branchId)
+      : await this.repository.listProducts()
     return Promise.all(
       rows.map(async (row) =>
         this.loadProduct(row, this.database),
@@ -607,31 +613,44 @@ export class ProductCatalogService {
   async getProduct(
     actorId: string,
     productId: string,
+    branchId?: string,
   ): Promise<CatalogProduct | null> {
     await this.access.assertPermission(actorId, 'products.read')
     if (!z.string().uuid().safeParse(productId).success) {
       throw new CatalogError('The product identifier is invalid')
     }
-    const row = await this.repository.getProduct(productId)
+    if (branchId) await this.assertProductBranchAccess(actorId, branchId)
+    const row = branchId
+      ? await this.repository.getProductForBranch(productId, branchId)
+      : await this.repository.getProduct(productId)
     return row ? this.loadProduct(row, this.database) : null
   }
 
   async getProductByBarcode(
     actorId: string,
     barcode: string,
+    branchId?: string,
   ): Promise<CatalogProduct | null> {
     await this.access.assertPermission(actorId, 'products.read')
     const parsedBarcode = z.string().trim().min(1).max(128).safeParse(barcode)
     if (!parsedBarcode.success) {
       throw new CatalogError('The barcode is invalid')
     }
-    const row = await this.repository.getProductByBarcode(
-      parsedBarcode.data,
-    )
+    if (branchId) await this.assertProductBranchAccess(actorId, branchId)
+    const row = branchId
+      ? await this.repository.getProductByBarcodeForBranch(
+          parsedBarcode.data,
+          branchId,
+        )
+      : await this.repository.getProductByBarcode(parsedBarcode.data)
     return row ? this.loadProduct(row, this.database) : null
   }
 
-  async createProduct(actorId: string, input: unknown): Promise<string> {
+  async createProduct(
+    actorId: string,
+    input: unknown,
+    branchId?: string,
+  ): Promise<string> {
     const parsed = productInputSchema.safeParse(input)
     if (!parsed.success) {
       throw new CatalogError('The product details are invalid')
@@ -646,6 +665,9 @@ export class ProductCatalogService {
         'products.create',
         transaction,
       )
+      if (branchId) {
+        await this.assertProductBranchAccess(actorId, branchId, transaction)
+      }
       await this.assertActiveReferences(
         parsed.data,
         transaction,
@@ -659,6 +681,20 @@ export class ProductCatalogService {
         this.productFields(id, parsed.data, now),
         transaction,
       )
+      if (branchId) {
+        await this.repository.createProductBranchAvailability(
+          {
+            productId: id,
+            branchId,
+            purchasePrice: parsed.data.purchasePrice,
+            sellingPrice: parsed.data.sellingPrice,
+            minimumStock: parsed.data.minimumStock,
+            status: 'active',
+            createdAt: now,
+          },
+          transaction,
+        )
+      }
       await this.replaceProductDetails(
         id,
         parsed.data,
@@ -683,6 +719,7 @@ export class ProductCatalogService {
     actorId: string,
     productId: string,
     input: unknown,
+    branchId?: string,
   ): Promise<void> {
     const parsed = productInputSchema.safeParse(input)
     if (
@@ -700,11 +737,40 @@ export class ProductCatalogService {
         'products.update',
         transaction,
       )
-      const beforeRow = await this.repository.getProduct(productId, transaction)
+      if (branchId) {
+        await this.assertProductBranchAccess(actorId, branchId, transaction)
+        if (!(await this.repository.hasProductBranchAvailability(
+          productId,
+          branchId,
+          transaction,
+        ))) {
+          throw new CatalogError('The product is not available in this branch')
+        }
+      }
+      const beforeRow = branchId
+        ? await this.repository.getProductForBranch(productId, branchId, transaction)
+        : await this.repository.getProduct(productId, transaction)
       if (!beforeRow || beforeRow.status === 'archived') {
         throw new CatalogError('The product does not exist or is archived')
       }
       const before = await this.loadProduct(beforeRow, transaction)
+      const principal = branchId
+        ? await this.authRepository.getPrincipal(actorId, transaction)
+        : null
+      const canEditSharedCatalog = !branchId || Boolean(
+        principal?.roleCodes.some((role) =>
+          ['system_owner', 'general_manager', 'admin'].includes(role),
+        ),
+      )
+      if (
+        branchId &&
+        !canEditSharedCatalog &&
+        this.hasSharedProductChanges(before, parsed.data)
+      ) {
+        throw new CatalogError(
+          'Branch users may only change product pricing and availability',
+        )
+      }
       await this.assertActiveReferences(
         parsed.data,
         transaction,
@@ -714,19 +780,36 @@ export class ProductCatalogService {
         parsed.data.baseUnitId,
         transaction,
       )
-      await this.repository.updateProduct(
-        productId,
-        this.productUpdateFields(parsed.data),
-        now,
-        transaction,
-      )
-      await this.repository.deleteProductDetails(productId, transaction)
-      await this.replaceProductDetails(
-        productId,
-        parsed.data,
-        now,
-        transaction,
-      )
+      if (canEditSharedCatalog) {
+        await this.repository.updateProduct(
+          productId,
+          this.productUpdateFields(parsed.data),
+          now,
+          transaction,
+        )
+      }
+      if (branchId) {
+        await this.repository.updateProductBranchAvailability(
+          productId,
+          branchId,
+          {
+            purchasePrice: parsed.data.purchasePrice,
+            sellingPrice: parsed.data.sellingPrice,
+            minimumStock: parsed.data.minimumStock,
+          },
+          now,
+          transaction,
+        )
+      }
+      if (canEditSharedCatalog) {
+        await this.repository.deleteProductDetails(productId, transaction)
+        await this.replaceProductDetails(
+          productId,
+          parsed.data,
+          now,
+          transaction,
+        )
+      }
       await this.writeAudit(
         transaction,
         actorId,
@@ -744,6 +827,7 @@ export class ProductCatalogService {
     actorId: string,
     productId: string,
     status: string,
+    branchId?: string,
   ): Promise<void> {
     const parsedStatus = productStatusSchema.safeParse(status)
     if (
@@ -759,16 +843,31 @@ export class ProductCatalogService {
         'products.update',
         transaction,
       )
-      const before = await this.repository.getProduct(productId, transaction)
+      if (branchId) {
+        await this.assertProductBranchAccess(actorId, branchId, transaction)
+      }
+      const before = branchId
+        ? await this.repository.getProductForBranch(productId, branchId, transaction)
+        : await this.repository.getProduct(productId, transaction)
       if (!before || before.status === 'archived') {
         throw new CatalogError('The product does not exist or is archived')
       }
-      await this.repository.setProductStatus(
-        productId,
-        parsedStatus.data,
-        now,
-        transaction,
-      )
+      if (branchId) {
+        await this.repository.setProductBranchAvailabilityStatus(
+          productId,
+          branchId,
+          parsedStatus.data,
+          now,
+          transaction,
+        )
+      } else {
+        await this.repository.setProductStatus(
+          productId,
+          parsedStatus.data,
+          now,
+          transaction,
+        )
+      }
       await this.writeAudit(
         transaction,
         actorId,
@@ -782,7 +881,11 @@ export class ProductCatalogService {
     })
   }
 
-  async archiveProduct(actorId: string, productId: string): Promise<void> {
+  async archiveProduct(
+    actorId: string,
+    productId: string,
+    branchId?: string,
+  ): Promise<void> {
     if (!z.string().uuid().safeParse(productId).success) {
       throw new CatalogError('The product identifier is invalid')
     }
@@ -793,16 +896,31 @@ export class ProductCatalogService {
         'products.delete',
         transaction,
       )
-      const product = await this.repository.getProduct(productId, transaction)
+      if (branchId) {
+        await this.assertProductBranchAccess(actorId, branchId, transaction)
+      }
+      const product = branchId
+        ? await this.repository.getProductForBranch(productId, branchId, transaction)
+        : await this.repository.getProduct(productId, transaction)
       if (!product || product.status === 'archived') {
         throw new CatalogError('The active product does not exist')
       }
-      await this.repository.setProductStatus(
-        productId,
-        'archived',
-        now,
-        transaction,
-      )
+      if (branchId) {
+        await this.repository.setProductBranchAvailabilityStatus(
+          productId,
+          branchId,
+          'inactive',
+          now,
+          transaction,
+        )
+      } else {
+        await this.repository.setProductStatus(
+          productId,
+          'archived',
+          now,
+          transaction,
+        )
+      }
       await this.writeAudit(
         transaction,
         actorId,
@@ -952,6 +1070,51 @@ export class ProductCatalogService {
         throw new CatalogError('Every barcode unit must be active')
       }
     }
+  }
+
+  private async assertProductBranchAccess(
+    actorId: string,
+    branchId: string,
+    executor?: SqlExecutor,
+  ): Promise<void> {
+    if (!z.string().uuid().safeParse(branchId).success) {
+      throw new CatalogError('The selected branch identifier is invalid')
+    }
+    await this.access.assertBranchAccess(actorId, branchId, executor)
+  }
+
+  private hasSharedProductChanges(
+    product: CatalogProduct,
+    input: z.infer<typeof productInputSchema>,
+  ): boolean {
+    return product.sku !== input.sku ||
+      product.name !== input.name ||
+      product.categoryId !== (input.categoryId ?? null) ||
+      product.brandId !== (input.brandId ?? null) ||
+      product.description !== (input.description ?? null) ||
+      product.baseUnitId !== input.baseUnitId ||
+      JSON.stringify(product.barcodes.map(({ barcode, unitId }) => ({ barcode, unitId }))) !==
+        JSON.stringify(input.barcodes.map(({ barcode, unitId }) => ({ barcode, unitId }))) ||
+      JSON.stringify(product.attributes.map(({ name, value }) => ({ name, value }))) !==
+        JSON.stringify(input.attributes.map(({ name, value }) => ({ name, value }))) ||
+      JSON.stringify(product.images.map(({ filePath, mimeType, sortOrder }) => ({
+        filePath,
+        mimeType,
+        sortOrder,
+      }))) !==
+        JSON.stringify(input.images.map(({ filePath, mimeType, sortOrder }) => ({
+          filePath,
+          mimeType,
+          sortOrder: sortOrder ?? 0,
+        }))) ||
+      JSON.stringify(product.conversions.map(({ unitId, factorToBase }) => ({
+        unitId,
+        factorToBase,
+      }))) !==
+        JSON.stringify(input.conversions.map(({ unitId, factorToBase }) => ({
+          unitId,
+          factorToBase,
+        })))
   }
 
   private async assertUnitPrecision(

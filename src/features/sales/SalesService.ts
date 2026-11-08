@@ -333,6 +333,16 @@ export class SalesService {
         if (!product || product.status !== 'active') {
           throw new SalesError('A selected product does not exist or is inactive')
         }
+        const [availability] = await transaction.query<{ is_available: number }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM product_branch_availability
+             WHERE product_id = ? AND branch_id = ? AND status = 'active'
+           ) AS is_available`,
+          [item.productId, location.branchId],
+        )
+        if (availability?.is_available !== 1) {
+          throw new SalesError('The selected product is not available in this branch')
+        }
         const unit = await this.repository.getUnit(
           item.productId,
           item.unitId,

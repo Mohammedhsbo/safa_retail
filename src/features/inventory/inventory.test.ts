@@ -54,6 +54,7 @@ async function createBranch(code: string) {
     branchId,
     code: 'main',
     name: 'Main Warehouse',
+    warehouseType: 'fabrics',
   })
   return { branchId, warehouseId }
 }
@@ -63,6 +64,7 @@ async function createProduct(
   name = sku,
   baseUnitId = units.KG!,
   conversions: Array<{ unitId: string; factorToBase: string }> = [],
+  branchId?: string,
 ) {
   const id = await catalog.createProduct(ownerId, {
     sku,
@@ -72,7 +74,7 @@ async function createProduct(
     sellingPrice: '4',
     minimumStock: '0',
     conversions,
-  })
+  }, branchId)
   productIds[sku] = id
   return id
 }
@@ -129,7 +131,7 @@ afterEach(async () => {
 describe('inventory ledger and weighted-average valuation', () => {
   it('posts exact decimal stock adjustments and maintains weighted-average cost', async () => {
     const { branchId, warehouseId } = await createBranch('cost')
-    const productId = await createProduct('STEEL')
+    const productId = await createProduct('STEEL', 'STEEL', units.KG!, [], branchId)
 
     await inventory.adjustStock(ownerId, {
       productId,
@@ -225,10 +227,10 @@ describe('inventory ledger and weighted-average valuation', () => {
   })
 
   it('converts only explicitly configured product units using decimal-safe factors', async () => {
-    const { warehouseId } = await createBranch('conversion')
+    const { branchId, warehouseId } = await createBranch('conversion')
     const productId = await createProduct('LIQUID', 'Liquid', units.L!, [
       { unitId: units.ML!, factorToBase: '0.001' },
-    ])
+    ], branchId)
 
     await inventory.adjustStock(ownerId, {
       productId,
@@ -274,7 +276,7 @@ describe('inventory ledger and weighted-average valuation', () => {
   it('requires inventory permissions and warehouse/branch scope for reads and adjustments', async () => {
     const first = await createBranch('scopea')
     const second = await createBranch('scopeb')
-    const productId = await createProduct('SCOPE')
+    const productId = await createProduct('SCOPE', 'SCOPE', units.KG!, [], first.branchId)
     const readerId = await createInventoryUser(
       'inventoryreader',
       ['inventory.read'],
@@ -305,6 +307,15 @@ describe('inventory ledger and weighted-average valuation', () => {
     await expect(
       inventory.getBalance(otherBranchUser, second.warehouseId, productId),
     ).rejects.toThrow(AuthorizationError)
+    const secondBranchReader = await createInventoryUser(
+      'secondbranchreader',
+      ['inventory.read'],
+      [second.branchId],
+      [second.warehouseId],
+    )
+    await expect(
+      inventory.getBalance(secondBranchReader, second.warehouseId, productId),
+    ).rejects.toThrow(AuthorizationError)
     await expect(
       inventory.getBalance(readerId, first.warehouseId, productId),
     ).resolves.toMatchObject({ updatedAt: null })
@@ -313,7 +324,7 @@ describe('inventory ledger and weighted-average valuation', () => {
   it('creates, approves, dispatches, and receives transfers with paired movements', async () => {
     const source = await createBranch('transferfrom')
     const destination = await createBranch('transferto')
-    const productId = await createProduct('TRANSFER')
+    const productId = await createProduct('TRANSFER', 'TRANSFER', units.KG!, [], source.branchId)
     const userId = await createInventoryUser(
       'transferrer',
       ['inventory.read', 'inventory.adjust', 'inventory.transfer'],
@@ -364,13 +375,9 @@ describe('inventory ledger and weighted-average valuation', () => {
       (await inventory.getBalance(userId, source.warehouseId, productId))
         .quantity,
     ).toBe('4.75')
-    expect(
-      (await inventory.getBalance(
-        userId,
-        destination.warehouseId,
-        productId,
-      )).quantity,
-    ).toBe('0')
+    await expect(
+      inventory.getBalance(userId, destination.warehouseId, productId),
+    ).rejects.toThrow(AuthorizationError)
     const outbound = await inventory.listMovements(userId, {
       warehouseId: source.warehouseId,
       productId,
@@ -383,6 +390,9 @@ describe('inventory ledger and weighted-average valuation', () => {
     })
 
     await inventory.receiveTransfer(userId, transferId)
+    await expect(
+      inventory.getBalance(userId, destination.warehouseId, productId),
+    ).resolves.toMatchObject({ quantity: '3.25' })
     expect(
       (await inventory.getBalance(
         userId,
@@ -426,8 +436,8 @@ describe('inventory ledger and weighted-average valuation', () => {
   it('rolls back all lines of a dispatch when one item is short of stock', async () => {
     const source = await createBranch('rollbackfrom')
     const destination = await createBranch('rollbackto')
-    const firstProduct = await createProduct('TRANSFER-A')
-    const secondProduct = await createProduct('TRANSFER-B')
+    const firstProduct = await createProduct('TRANSFER-A', 'TRANSFER-A', units.KG!, [], source.branchId)
+    const secondProduct = await createProduct('TRANSFER-B', 'TRANSFER-B', units.KG!, [], source.branchId)
     const userId = await createInventoryUser(
       'rollbacktransfer',
       ['inventory.read', 'inventory.adjust', 'inventory.transfer'],
@@ -481,7 +491,7 @@ describe('inventory ledger and weighted-average valuation', () => {
 
   it('reconciles stock counts against current balances and applies changes once', async () => {
     const { branchId, warehouseId } = await createBranch('count')
-    const productId = await createProduct('COUNTED')
+    const productId = await createProduct('COUNTED', 'COUNTED', units.KG!, [], branchId)
     const counterId = await createInventoryUser(
       'counter',
       ['inventory.read', 'inventory.adjust', 'inventory.count'],
@@ -553,7 +563,7 @@ describe('inventory ledger and weighted-average valuation', () => {
 
   it('requires complete counts and refuses direct movement edits and invalid identifiers', async () => {
     const { branchId, warehouseId } = await createBranch('countinvalid')
-    const productId = await createProduct('COUNT-INVALID')
+    const productId = await createProduct('COUNT-INVALID', 'COUNT-INVALID', units.KG!, [], branchId)
     const counterId = await createInventoryUser(
       'countinvaliduser',
       ['inventory.read', 'inventory.count'],
@@ -582,8 +592,8 @@ describe('inventory ledger and weighted-average valuation', () => {
       }),
     ).rejects.toThrow(InventoryError)
 
-    const { warehouseId: otherWarehouse } = await createBranch('immutability')
-    const stockedProductId = await createProduct('IMMUTABLE')
+    const { branchId: otherBranchId, warehouseId: otherWarehouse } = await createBranch('immutability')
+    const stockedProductId = await createProduct('IMMUTABLE', 'IMMUTABLE', units.KG!, [], otherBranchId)
     const adjusterId = await createInventoryUser(
       'adjuster',
       ['inventory.adjust', 'inventory.read'],

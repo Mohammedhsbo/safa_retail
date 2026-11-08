@@ -114,6 +114,7 @@ beforeEach(async () => {
     branchId,
     code: 'main',
     name: 'Main Warehouse',
+    warehouseType: 'fabrics',
   })
   productId = await catalog.createProduct(ownerId, {
     sku: 'ACCOUNTING-ITEM',
@@ -122,7 +123,7 @@ beforeEach(async () => {
     purchasePrice: '1',
     sellingPrice: '10',
     minimumStock: '0',
-  })
+  }, branchId)
 })
 
 afterEach(async () => {

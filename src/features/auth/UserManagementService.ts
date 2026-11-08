@@ -468,7 +468,9 @@ export class UserManagementService {
         warehouse_status: string
         branch_status: string
       }>(
-        `SELECT w.branch_id, w.status AS warehouse_status,
+        `SELECT w.branch_id,
+                CASE WHEN w.status = 'active' AND w.is_active = FALSE THEN 'inactive'
+                     ELSE w.status END AS warehouse_status,
                 b.status AS branch_status
          FROM warehouses w
          JOIN branches b ON b.id = w.branch_id

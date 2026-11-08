@@ -12,7 +12,9 @@ export class PurchasesRepository {
     executor: SqlExecutor = this.database,
   ): Promise<SqlRow | null> {
     const [row] = await executor.query(
-      `SELECT w.id, w.branch_id, w.status AS warehouse_status,
+      `SELECT w.id, w.branch_id,
+              CASE WHEN w.status = 'active' AND w.is_active = FALSE THEN 'inactive'
+                   ELSE w.status END AS warehouse_status,
               b.status AS branch_status
        FROM warehouses w JOIN branches b ON b.id = w.branch_id
        WHERE w.id = ?`,

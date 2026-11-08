@@ -8,6 +8,7 @@ import App from './App.tsx'
 import { reportError } from './shared/errors/report-error'
 import { AndroidStartupScreen } from './app/AndroidStartupScreen'
 import { createOnlineApplicationServices } from './app/RetailApplicationServices'
+import { useWorkspaceStore } from './shared/state/workspace-store'
 
 window.addEventListener('error', (event) => {
   reportError(event.error ?? event.message)
@@ -44,6 +45,11 @@ if (Capacitor.isNativePlatform() && platform !== 'android') {
         const allowInsecureLocalApi = import.meta.env.DEV ||
           (Capacitor.isNativePlatform() && import.meta.env.VITE_ALLOW_INSECURE_LOCAL_API === 'true')
         const apiClient = new ApiClient(apiUrl, 15_000, allowInsecureLocalApi)
+        const workspace = useWorkspaceStore.getState()
+        apiClient.setWorkspace(workspace.branchId, workspace.warehouseId)
+        useWorkspaceStore.subscribe((state) => {
+          apiClient.setWorkspace(state.branchId, state.warehouseId)
+        })
         const services = createOnlineApplicationServices(apiClient)
         await apiClient.health()
         const [initialSetupRequired] = await Promise.all([

@@ -533,7 +533,8 @@ export class AuthRepository {
     const [row] = await executor.query<{ branch_id: string }>(
       `SELECT w.branch_id FROM warehouses w
        JOIN branches b ON b.id = w.branch_id
-       WHERE w.id = ? AND w.status = 'active' AND b.status = 'active'`,
+       WHERE w.id = ? AND w.status = 'active' AND w.is_active = TRUE
+         AND b.status = 'active'`,
       [warehouseId],
     )
 
@@ -580,7 +581,8 @@ export class AuthRepository {
          ON uba.user_id = uwa.user_id AND uba.branch_id = w.branch_id
        JOIN branches b ON b.id = w.branch_id
        WHERE uwa.user_id = ? AND uwa.warehouse_id = ? AND w.branch_id = ?
-         AND w.status = 'active' AND b.status = 'active'`,
+         AND w.status = 'active' AND w.is_active = TRUE
+         AND b.status = 'active'`,
       [userId, warehouseId, branchId],
     )
 

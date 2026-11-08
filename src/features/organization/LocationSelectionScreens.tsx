@@ -19,18 +19,28 @@ export function BranchSelectionScreen() {
   const { organization } = useRetailApplicationServices()
   const user = useSessionStore((state) => state.user)
   const setBranch = useWorkspaceStore((state) => state.setBranch)
+  const clearWorkspace = useWorkspaceStore((state) => state.clearWorkspace)
   const [branches, setBranches] = useState<Branch[]>([])
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const canManage = Boolean(user?.permissions.includes('settings.manage'))
+  const canCreateBranch = Boolean(
+    canManage &&
+    user?.roleCodes.some((role) =>
+      ['system_owner', 'general_manager', 'admin'].includes(role),
+    ),
+  )
 
   useEffect(() => {
     let active = true
+    clearWorkspace()
     if (!user) return
     void organization.listAccessibleBranches(user.id).then((availableBranches) => {
-      if (active) setBranches(availableBranches)
+      if (active) {
+        setBranches(availableBranches)
+      }
     }).catch((loadError: unknown) => {
       if (active) {
         setError(loadError instanceof Error ? loadError.message : t('locations.loadFailed'))
@@ -39,7 +49,7 @@ export function BranchSelectionScreen() {
     return () => {
       active = false
     }
-  }, [organization, t, user])
+  }, [clearWorkspace, organization, t, user])
 
   const select = (branch: Branch): void => {
     setBranch(branch.id)
@@ -48,13 +58,14 @@ export function BranchSelectionScreen() {
 
   const create = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
-    if (!user || !canManage) return
+    if (!user || !canCreateBranch) return
     setBusy(true)
     setError('')
     try {
-      const branchId = await organization.createBranch(user.id, { code, name })
-      setBranch(branchId)
-      navigate('/warehouse-selection')
+      await organization.createBranch(user.id, { code, name })
+      setBranches(await organization.listAccessibleBranches(user.id))
+      setCode('')
+      setName('')
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : t('locations.createFailed'))
     } finally {
@@ -86,12 +97,12 @@ export function BranchSelectionScreen() {
           ))}
         </ul>
       )}
-      {branches.length === 0 && !canManage && (
+      {branches.length === 0 && !canCreateBranch && (
         <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
           {t('locations.noBranches')}
         </p>
       )}
-      {canManage && (
+      {canCreateBranch && (
         <form className="grid gap-3 border-t border-[var(--border)] pt-5" onSubmit={(event) => void create(event)}>
           <h2 className="font-bold text-[var(--ink)]">{t('locations.addBranch')}</h2>
           <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
@@ -129,10 +140,15 @@ export function WarehouseSelectionScreen() {
   const user = useSessionStore((state) => state.user)
   const branchId = useWorkspaceStore((state) => state.branchId)
   const setWarehouse = useWorkspaceStore((state) => state.setWarehouse)
+  const clearWorkspace = useWorkspaceStore((state) => state.clearWorkspace)
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [branchName, setBranchName] = useState('')
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
+  const [warehouseType, setWarehouseType] = useState<Warehouse['warehouseType']>('fabrics')
+  const [address, setAddress] = useState('')
+  const [description, setDescription] = useState('')
+  const [status, setStatus] = useState<'active' | 'inactive'>('active')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const canManage = Boolean(user?.permissions.includes('settings.manage'))
@@ -146,13 +162,19 @@ export function WarehouseSelectionScreen() {
       }
       setError('')
       try {
-        const [available, branches] = await Promise.all([
-          organization.listAccessibleWarehouses(user.id, branchId),
-          organization.listAccessibleBranches(user.id),
-        ])
+        const branches = await organization.listAccessibleBranches(user.id)
+        const branch = branches.find((item) => item.id === branchId)
+        if (!branch) {
+          clearWorkspace()
+          navigate('/branch-selection', { replace: true })
+          return
+        }
+        const available = await organization.listAccessibleWarehouses(user.id, branchId)
         if (!active) return
-        setWarehouses(available)
-        setBranchName(branches.find((branch) => branch.id === branchId)?.name ?? '')
+        setWarehouses(available.filter((item) =>
+          item.branchId === branchId && item.status === 'active',
+        ))
+        setBranchName(branch.name)
       } catch (loadError) {
         if (active) {
           setError(loadError instanceof Error ? loadError.message : t('locations.loadFailed'))
@@ -163,7 +185,7 @@ export function WarehouseSelectionScreen() {
     return () => {
       active = false
     }
-  }, [branchId, navigate, organization, t, user])
+  }, [branchId, clearWorkspace, navigate, organization, t, user])
 
   const create = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
@@ -171,13 +193,21 @@ export function WarehouseSelectionScreen() {
     setBusy(true)
     setError('')
     try {
-      const warehouseId = await organization.createWarehouse(user.id, {
+      await organization.createWarehouse(user.id, {
         branchId,
         code,
         name,
+        warehouseType: warehouseType ?? 'fabrics',
+        address: address || null,
+        description: description || null,
+        status,
       })
-      setWarehouse(warehouseId)
-      navigate('/dashboard', { replace: true })
+      const available = await organization.listAccessibleWarehouses(user.id, branchId)
+      setWarehouses(available.filter((item) =>
+        item.branchId === branchId && item.status === 'active',
+      ))
+      setCode('')
+      setName('')
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : t('locations.createFailed'))
     } finally {
@@ -191,6 +221,7 @@ export function WarehouseSelectionScreen() {
       description={t('locations.warehouseDescription', { branch: branchName })}
       icon={<WarehouseIcon aria-hidden="true" size={22} />}
       error={error}
+      backTo="/branch-selection"
     >
       {warehouses.length > 0 && (
         <ul className="grid gap-3 sm:grid-cols-2">
@@ -204,7 +235,14 @@ export function WarehouseSelectionScreen() {
                 }}
                 type="button"
               >
-                <span className="font-bold text-[var(--ink)]">{warehouse.name}</span>
+                <span className="min-w-0 text-start">
+                  <span className="block font-bold text-[var(--ink)]">{warehouse.name}</span>
+                  <span className="mt-1 block text-xs text-[var(--muted)]">
+                    {warehouse.warehouseType
+                      ? t(`locations.warehouseTypes.${warehouse.warehouseType}`)
+                      : t('locations.warehouseTypes.unknown')}
+                  </span>
+                </span>
                 <span className="ms-auto text-sm text-[var(--muted)]">{warehouse.code}</span>
                 <ArrowRight aria-hidden="true" className="text-[var(--brand)]" size={18} />
               </button>
@@ -212,7 +250,7 @@ export function WarehouseSelectionScreen() {
           ))}
         </ul>
       )}
-      {warehouses.length === 0 && !canManage && (
+      {warehouses.length === 0 && (
         <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
           {t('locations.noWarehouses')}
         </p>
@@ -241,6 +279,49 @@ export function WarehouseSelectionScreen() {
               value={name}
             />
           </label>
+          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
+            {t('locations.warehouseType')}
+            <select
+              className="min-h-11 rounded-xl border border-[var(--border)] bg-white px-3"
+              onChange={(event) => setWarehouseType(event.target.value as NonNullable<Warehouse['warehouseType']>)}
+              required
+              value={warehouseType ?? ''}
+            >
+              <option value="clothing_manufacturing">{t('locations.warehouseTypes.clothing_manufacturing')}</option>
+              <option value="detergent_manufacturing">{t('locations.warehouseTypes.detergent_manufacturing')}</option>
+              <option value="fabrics">{t('locations.warehouseTypes.fabrics')}</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
+            {t('locations.address')}
+            <input
+              className="min-h-11 rounded-xl border border-[var(--border)] px-3"
+              maxLength={500}
+              onChange={(event) => setAddress(event.target.value)}
+              value={address}
+            />
+          </label>
+          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
+            {t('locations.description')}
+            <textarea
+              className="min-h-20 rounded-xl border border-[var(--border)] p-3"
+              maxLength={1000}
+              onChange={(event) => setDescription(event.target.value)}
+              value={description}
+            />
+          </label>
+          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
+            {t('locations.statusLabel')}
+            <select
+              className="min-h-11 rounded-xl border border-[var(--border)] bg-white px-3"
+              onChange={(event) => setStatus(event.target.value as 'active' | 'inactive')}
+              required
+              value={status}
+            >
+              <option value="active">{t('locations.status.active')}</option>
+              <option value="inactive">{t('locations.status.inactive')}</option>
+            </select>
+          </label>
           <Button disabled={busy} type="submit">{t('locations.createWarehouse')}</Button>
         </form>
       )}
@@ -255,6 +336,9 @@ export function BranchesManagementScreen() {
   const user = useSessionStore((state) => state.user)
   const { branchId: selectedBranchId, warehouseId: selectedWarehouseId, clearWorkspace } = useWorkspaceStore()
   const canManage = Boolean(user?.permissions.includes('settings.manage'))
+  const [warehouseTypeFilter, setWarehouseTypeFilter] = useState<
+    'all' | 'clothing_manufacturing' | 'detergent_manufacturing' | 'fabrics' | 'unknown'
+  >('all')
   const [branches, setBranches] = useState<Branch[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [editingBranch, setEditingBranch] = useState<string | null>(null)
@@ -279,7 +363,7 @@ export function BranchesManagementScreen() {
       const activeBranchIds = new Set(activeBranches.map((branch) => branch.id))
       setBranches(activeBranches)
       setWarehouses(availableWarehouses.filter((warehouse) =>
-        warehouse.status === 'active' && activeBranchIds.has(warehouse.branchId),
+        warehouse.status !== 'archived' && activeBranchIds.has(warehouse.branchId),
       ))
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : t('locations.loadFailed'))
@@ -304,7 +388,7 @@ export function BranchesManagementScreen() {
           const activeBranchIds = new Set(activeBranches.map((branch) => branch.id))
           setBranches(activeBranches)
           setWarehouses(availableWarehouses.filter((warehouse) =>
-            warehouse.status === 'active' && activeBranchIds.has(warehouse.branchId),
+            warehouse.status !== 'archived' && activeBranchIds.has(warehouse.branchId),
           ))
         }
       } catch (loadError) {
@@ -369,6 +453,20 @@ export function BranchesManagementScreen() {
       </header>
       {error && <><ToastError error={error} /><p className="rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">{error}</p></>}
       {loading && <p className="rounded-xl bg-white p-4 text-sm text-[var(--muted)]" role="status">{t('auth.working')}</p>}
+      <label className="grid max-w-sm gap-1 text-sm font-semibold text-[var(--ink)]">
+        {t('locations.filterWarehouseType')}
+        <select
+          className="min-h-11 rounded-xl border border-[var(--border)] bg-white px-3"
+          onChange={(event) => setWarehouseTypeFilter(event.target.value as typeof warehouseTypeFilter)}
+          value={warehouseTypeFilter}
+        >
+          <option value="all">{t('locations.allWarehouseTypes')}</option>
+          <option value="clothing_manufacturing">{t('locations.warehouseTypes.clothing_manufacturing')}</option>
+          <option value="detergent_manufacturing">{t('locations.warehouseTypes.detergent_manufacturing')}</option>
+          <option value="fabrics">{t('locations.warehouseTypes.fabrics')}</option>
+          <option value="unknown">{t('locations.warehouseTypes.unknown')}</option>
+        </select>
+      </label>
       {branches.length === 0 && !error && (
         !loading && <p className="rounded-2xl border border-[var(--border)] bg-white p-6 text-sm text-[var(--muted)]">{t('locations.noBranches')}</p>
       )}
@@ -401,7 +499,15 @@ export function BranchesManagementScreen() {
               }
             }}
             t={t}
-            warehouses={warehouses.filter((warehouse) => warehouse.branchId === branch.id)}
+            warehouses={warehouses.filter((warehouse) =>
+              warehouse.branchId === branch.id &&
+              (
+                warehouseTypeFilter === 'all' ||
+                (warehouseTypeFilter === 'unknown'
+                  ? warehouse.warehouseType === null
+                  : warehouse.warehouseType === warehouseTypeFilter)
+              ),
+            )}
             editingWarehouse={editingWarehouse}
             onEditWarehouse={(warehouseId) => {
               setEditingBranch(null)
@@ -462,7 +568,14 @@ function BranchManagementCard({
   onArchive: () => void
   onEditWarehouse: (warehouseId: string) => void
   onCancelWarehouse: () => void
-  onSaveWarehouse: (warehouse: Warehouse, input: { code: string; name: string }) => Promise<void>
+  onSaveWarehouse: (warehouse: Warehouse, input: {
+    code: string
+    name: string
+    warehouseType: NonNullable<Warehouse['warehouseType']>
+    address: string | null
+    description: string | null
+    status: 'active' | 'inactive'
+  }) => Promise<void>
   onArchiveWarehouse: (warehouse: Warehouse) => void
   t: TFunction
 }) {
@@ -543,11 +656,13 @@ function BranchManagementCard({
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-[var(--ink)]">{warehouse.name}</p>
                         <p className="mt-0.5 text-xs text-[var(--muted)]">
-                          {warehouse.code} · {t(`locations.status.${warehouse.status}`)}
+                          {warehouse.code} · {warehouse.warehouseType
+                            ? t(`locations.warehouseTypes.${warehouse.warehouseType}`)
+                            : t('locations.warehouseTypes.unknown')} · {t(`locations.status.${warehouse.status}`)}
                         </p>
                       </div>
                     </div>
-                    {canManage && warehouse.status === 'active' && (
+                    {canManage && warehouse.status !== 'archived' && (
                       <div className="flex gap-2">
                         <Button onClick={() => onEditWarehouse(warehouse.id)} variant="secondary"><Pencil aria-hidden="true" size={15} />{t('locations.edit')}</Button>
                         <Button className="text-red-700" disabled={busy} onClick={() => onArchiveWarehouse(warehouse)} variant="secondary"><Archive aria-hidden="true" size={15} />{t('locations.delete')}</Button>
@@ -574,21 +689,77 @@ function WarehouseEditForm({
   warehouse: Warehouse
   busy: boolean
   onCancel: () => void
-  onSave: (warehouse: Warehouse, input: { code: string; name: string }) => Promise<void>
+  onSave: (warehouse: Warehouse, input: {
+    code: string
+    name: string
+    warehouseType: NonNullable<Warehouse['warehouseType']>
+    address: string | null
+    description: string | null
+    status: 'active' | 'inactive'
+  }) => Promise<void>
   t: TFunction
 }) {
   const [code, setCode] = useState(warehouse.code)
   const [name, setName] = useState(warehouse.name)
+  const [warehouseType, setWarehouseType] = useState<NonNullable<Warehouse['warehouseType']>>(
+    warehouse.warehouseType ?? 'fabrics',
+  )
+  const [address, setAddress] = useState(warehouse.address ?? '')
+  const [description, setDescription] = useState(warehouse.description ?? '')
+  const [status, setStatus] = useState<'active' | 'inactive'>(
+    warehouse.status === 'inactive' ? 'inactive' : 'active',
+  )
   return (
     <form
-      className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]"
+      className="grid gap-2 sm:grid-cols-2"
       onSubmit={(event) => {
         event.preventDefault()
-        void onSave(warehouse, { code, name })
+        void onSave(warehouse, {
+          code,
+          name,
+          warehouseType,
+          address: address || null,
+          description: description || null,
+          status,
+        })
       }}
     >
       <LocationInput label={t('locations.code')} value={code} onChange={setCode} />
       <LocationInput label={t('locations.name')} value={name} onChange={setName} />
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink)]">
+        {t('locations.warehouseType')}
+        <select
+          className="min-h-10 rounded-lg border border-[var(--border)] bg-white px-3 text-sm"
+          onChange={(event) => setWarehouseType(event.target.value as NonNullable<Warehouse['warehouseType']>)}
+          required
+          value={warehouseType}
+        >
+          <option value="clothing_manufacturing">{t('locations.warehouseTypes.clothing_manufacturing')}</option>
+          <option value="detergent_manufacturing">{t('locations.warehouseTypes.detergent_manufacturing')}</option>
+          <option value="fabrics">{t('locations.warehouseTypes.fabrics')}</option>
+        </select>
+      </label>
+      <LocationInput label={t('locations.address')} value={address} onChange={setAddress} maxLength={500} required={false} />
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink)]">
+        {t('locations.description')}
+        <textarea
+          className="min-h-10 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm"
+          maxLength={1000}
+          onChange={(event) => setDescription(event.target.value)}
+          value={description}
+        />
+      </label>
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink)]">
+        {t('locations.statusLabel')}
+        <select
+          className="min-h-10 rounded-lg border border-[var(--border)] bg-white px-3 text-sm"
+          onChange={(event) => setStatus(event.target.value as 'active' | 'inactive')}
+          value={status}
+        >
+          <option value="active">{t('locations.status.active')}</option>
+          <option value="inactive">{t('locations.status.inactive')}</option>
+        </select>
+      </label>
       <EditActions busy={busy} onCancel={onCancel} t={t} />
     </form>
   )
@@ -643,17 +814,33 @@ function LocationSelectionLayout({
   description,
   icon,
   error,
+  backTo,
   children,
 }: {
   title: string
   description: string
   icon: ReactNode
   error: string
+  backTo?: string
   children: React.ReactNode
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { authentication } = useRetailApplicationServices()
+  const [logoutError, setLogoutError] = useState('')
+
+  const signOut = async (): Promise<void> => {
+    useWorkspaceStore.getState().clearWorkspace()
+    setLogoutError('')
+    try {
+      await authentication.logout()
+      navigate('/login', { replace: true })
+    } catch (error) {
+      setLogoutError(
+        error instanceof Error ? error.message : t('auth.logoutFailed'),
+      )
+    }
+  }
 
   return (
     <main className="relative grid min-h-screen place-items-center bg-[var(--surface)] p-4 pt-20 sm:p-8 sm:pt-24">
@@ -670,28 +857,26 @@ function LocationSelectionLayout({
             <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
           </div>
         </header>
-        {error && (
+        {(error || logoutError) && (
           <>
-          <ToastError error={error} />
+          <ToastError error={logoutError || error} />
           <p className="rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">
-            {error}
+            {logoutError || error}
           </p>
           </>
         )}
         {children}
         <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+          {backTo && (
+            <Button
+              onClick={() => navigate(backTo)}
+              variant="secondary"
+            >
+              {t('locations.back')}
+            </Button>
+          )}
           <Button
-            onClick={() => navigate(-1)}
-            variant="secondary"
-          >
-            {t('locations.back')}
-          </Button>
-          <Button
-            onClick={() => {
-              authentication.logout()
-              useWorkspaceStore.getState().clearWorkspace()
-              navigate('/login', { replace: true })
-            }}
+            onClick={() => void signOut()}
             variant="secondary"
           >
             {t('auth.signOut')}

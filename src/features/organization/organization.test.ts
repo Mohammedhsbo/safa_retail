@@ -193,11 +193,13 @@ describe('business configuration and organization', () => {
       branchId: firstBranchId,
       code: 'main',
       name: 'Main Warehouse',
+      warehouseType: 'fabrics',
     })
     const secondWarehouseId = await organization.createWarehouse(ownerId, {
       branchId: firstBranchId,
       code: 'back',
       name: 'Back Warehouse',
+      warehouseType: 'detergent_manufacturing',
     })
 
     await organization.updateBranch(ownerId, firstBranchId, {
@@ -210,6 +212,9 @@ describe('business configuration and organization', () => {
       branchId: secondBranchId,
       code: 'primary',
       name: 'Primary Warehouse',
+      warehouseType: 'clothing_manufacturing',
+      address: 'North dock',
+      description: 'Finished garments',
     })
 
     const branches = await organization.listBranches(ownerId)
@@ -228,11 +233,15 @@ describe('business configuration and organization', () => {
           id: firstWarehouseId,
           branchId: secondBranchId,
           code: 'PRIMARY',
+          warehouseType: 'clothing_manufacturing',
+          address: 'North dock',
+          description: 'Finished garments',
         }),
         expect.objectContaining({
           id: secondWarehouseId,
           branchId: firstBranchId,
           code: 'BACK',
+          warehouseType: 'detergent_manufacturing',
         }),
       ]),
     )
@@ -252,6 +261,7 @@ describe('business configuration and organization', () => {
         branchId: firstBranchId,
         code: 'primary',
         name: 'Primary Warehouse',
+        warehouseType: 'clothing_manufacturing',
       }),
     ).rejects.toThrow(/operational history or user assignments/)
 
@@ -260,6 +270,7 @@ describe('business configuration and organization', () => {
         branchId: '00000000-0000-4000-8000-000000000000',
         code: 'closed',
         name: 'Closed Branch Warehouse',
+        warehouseType: 'fabrics',
       }),
     ).rejects.toThrow(OrganizationError)
   })
@@ -278,11 +289,13 @@ describe('business configuration and organization', () => {
       branchId: assignedBranchId,
       code: 'assigned-stock',
       name: 'Assigned Warehouse',
+      warehouseType: 'fabrics',
     })
     await organization.createWarehouse(ownerId, {
       branchId: assignedBranchId,
       code: 'other-stock',
       name: 'Other Warehouse',
+      warehouseType: 'fabrics',
     })
 
     const userId = await new UserManagementService(
@@ -326,6 +339,7 @@ describe('business configuration and organization', () => {
       branchId,
       code: 'main',
       name: 'Main Warehouse',
+      warehouseType: 'fabrics',
     })
     const employeeId = await createEmployee()
     await new UserManagementService(
@@ -366,6 +380,7 @@ describe('business configuration and organization', () => {
         branchId,
         code: 'new',
         name: 'New Warehouse',
+        warehouseType: 'fabrics',
       }),
     ).rejects.toThrow(/active branch/)
 
@@ -390,6 +405,7 @@ describe('business configuration and organization', () => {
       branchId,
       code: 'archive',
       name: 'Archive Warehouse',
+      warehouseType: 'fabrics',
     })
     const employeeId = await createEmployee()
     await new UserManagementService(
@@ -426,6 +442,7 @@ describe('business configuration and organization', () => {
       branchId: branchA,
       code: 'main',
       name: 'Main Warehouse',
+      warehouseType: 'fabrics',
     })
 
     const now = new Date().toISOString()
@@ -465,7 +482,51 @@ describe('business configuration and organization', () => {
         branchId: branchB,
         code: 'main',
         name: 'Main Warehouse',
+        warehouseType: 'fabrics',
       }),
     ).rejects.toThrow(/operational history or user assignments/)
+  })
+
+  it('persists warehouse type and active or inactive state', async () => {
+    await createOwner()
+    const branchId = await organization.createBranch(ownerId, {
+      code: 'warehouse-state',
+      name: 'Warehouse State Branch',
+    })
+    const warehouseId = await organization.createWarehouse(ownerId, {
+      branchId,
+      code: 'inactive',
+      name: 'Inactive Warehouse',
+      warehouseType: 'detergent_manufacturing',
+      address: 'Rear building',
+      description: 'Cleaning products',
+      status: 'inactive',
+    })
+
+    expect(await organization.listWarehouses(ownerId)).toContainEqual(
+      expect.objectContaining({
+        id: warehouseId,
+        warehouseType: 'detergent_manufacturing',
+        address: 'Rear building',
+        description: 'Cleaning products',
+        status: 'inactive',
+      }),
+    )
+    expect(await organization.listAccessibleWarehouses(ownerId, branchId))
+      .not.toContainEqual(expect.objectContaining({ id: warehouseId }))
+
+    await organization.updateWarehouse(ownerId, warehouseId, {
+      branchId,
+      code: 'inactive',
+      name: 'Inactive Warehouse',
+      warehouseType: 'fabrics',
+      status: 'active',
+    })
+    expect(await organization.listAccessibleWarehouses(ownerId, branchId))
+      .toContainEqual(expect.objectContaining({
+        id: warehouseId,
+        warehouseType: 'fabrics',
+        status: 'active',
+      }))
   })
 })

@@ -181,6 +181,11 @@ export class InventoryService {
         parsed.data.warehouseId,
         transaction,
       )
+      await this.assertProductAvailability(
+        parsed.data.productId,
+        parsed.data.warehouseId,
+        transaction,
+      )
       const normalized = await this.normalizeQuantity(
         parsed.data.productId,
         parsed.data.unitId,
@@ -264,6 +269,12 @@ export class InventoryService {
       'inventory.read',
       warehouseId,
       this.database,
+    )
+    await this.assertProductAvailability(
+      productId,
+      warehouseId,
+      this.database,
+      false,
     )
     const product = await this.requireActiveProduct(productId, this.database)
     const balance = await this.repository.getBalance(
@@ -381,6 +392,7 @@ export class InventoryService {
         item.quantity,
         executor,
       )
+      await this.assertProductAvailability(item.productId, warehouseId, executor)
       const unit = await this.getProductUnit(
         item.productId,
         item.unitId,
@@ -454,6 +466,11 @@ export class InventoryService {
     let totalCost = 0n
     const costs: Array<{ materialId: string; unitCost: string }> = []
     for (const material of materials) {
+      await this.assertProductAvailability(
+        material.productId,
+        warehouseId,
+        executor,
+      )
       const normalized = await this.normalizeQuantity(
         material.productId,
         material.unitId,
@@ -505,6 +522,7 @@ export class InventoryService {
   ): Promise<void> {
     await this.access.assertPermission(actorId, 'manufacturing.manage', executor)
     await this.assertWarehouseScope(actorId, warehouseId, executor)
+    await this.assertProductAvailability(productId, warehouseId, executor)
     const normalized = await this.normalizeQuantity(
       productId,
       unitId,
@@ -541,6 +559,7 @@ export class InventoryService {
         item.quantity,
         executor,
       )
+      await this.assertProductAvailability(item.productId, warehouseId, executor)
       await this.applyDecrease(
         actorId,
         warehouseId,
@@ -677,6 +696,11 @@ export class InventoryService {
       )
       const normalizedItems: NormalizedInput[] = []
       for (const item of parsed.data.items) {
+        await this.assertProductAvailability(
+          item.productId,
+          parsed.data.fromWarehouseId,
+          transaction,
+        )
         normalizedItems.push(
           await this.normalizeQuantity(
             item.productId,
@@ -871,6 +895,13 @@ export class InventoryService {
 
       for (const item of items) {
         const normalized = this.transferItem(item)
+        await this.repository.ensureProductBranchAvailabilityFromSource(
+          normalized.productId,
+          this.rowString(transfer.from_branch_id),
+          this.rowString(transfer.to_branch_id),
+          now,
+          transaction,
+        )
         const unitCost = await this.repository.getTransferMovementCost(
           transferId,
           this.rowString(transfer.from_warehouse_id),
@@ -998,6 +1029,11 @@ export class InventoryService {
         transaction,
       )
       for (const productId of parsed.data.productIds) {
+        await this.assertProductAvailability(
+          productId,
+          parsed.data.warehouseId,
+          transaction,
+        )
         const product = await this.requireActiveProduct(
           productId,
           transaction,
@@ -1108,6 +1144,11 @@ export class InventoryService {
       if (!item) {
         throw new InventoryError('The product is not part of this stock count')
       }
+      await this.assertProductAvailability(
+        parsed.data.productId,
+        this.rowString(count.warehouse_id),
+        transaction,
+      )
       const normalized = await this.normalizeQuantity(
         parsed.data.productId,
         parsed.data.unitId,
@@ -1170,6 +1211,11 @@ export class InventoryService {
 
       for (const item of items) {
         const productId = this.rowString(item.product_id)
+        await this.assertProductAvailability(
+          productId,
+          this.rowString(count.warehouse_id),
+          transaction,
+        )
         const countedQuantity = this.rowString(item.counted_quantity)
         const currentBalance = await this.repository.getBalance(
           productId,
@@ -1498,6 +1544,30 @@ export class InventoryService {
     await this.access.assertBranchAccess(actorId, branchId, executor)
   }
 
+  private async assertProductAvailability(
+    productId: string,
+    warehouseId: string,
+    executor: SqlExecutor,
+    requireActiveAvailability = true,
+  ): Promise<void> {
+    const activeFilter = requireActiveAvailability
+      ? "AND a.status = 'active'"
+      : ''
+    const [row] = await executor.query<{ available: number }>(
+      `SELECT 1 AS available
+       FROM product_branch_availability a
+       JOIN warehouses w ON w.branch_id = a.branch_id
+       WHERE a.product_id = ? AND w.id = ? ${activeFilter}
+       LIMIT 1`,
+      [productId, warehouseId],
+    )
+    if (!row) {
+      throw new AuthorizationError(
+        'The product is not available in the selected branch',
+      )
+    }
+  }
+
   private async getProductUnit(
     productId: string,
     unitId: string,
@@ -1606,7 +1676,9 @@ export class InventoryService {
     ) {
       return false
     }
-    if (principal.roleCodes.includes('system_owner')) {
+    if (principal.roleCodes.some((role) =>
+      ['system_owner', 'general_manager', 'admin'].includes(role),
+    )) {
       return true
     }
     return (

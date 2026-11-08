@@ -183,20 +183,26 @@ export class ReportsRepository {
     const warehouseFilter = warehouseIds
       ? `AND w.id IN (${warehouseIds.map(() => '?').join(', ')})`
       : ''
-    const warehouseStatus = includeArchived ? '' : "AND w.status = 'active'"
+    const warehouseStatus = includeArchived
+      ? ''
+      : "AND w.status = 'active' AND w.is_active = TRUE"
     return executor.query(
       `SELECT p.id AS product_id, p.sku, p.name AS product_name,
-              p.minimum_stock, p.base_unit_id, u.name AS unit_name,
+              a.minimum_stock, p.base_unit_id, u.name AS unit_name,
               w.id AS warehouse_id, w.code AS warehouse_code,
+              w.warehouse_type,
               COALESCE(ib.on_hand_quantity, '0') AS quantity,
               COALESCE(ib.average_unit_cost, '0') AS average_unit_cost
        FROM products p
        JOIN measurement_units u ON u.id = p.base_unit_id
        JOIN warehouses w ON w.branch_id = ? ${warehouseStatus}
        JOIN branches b ON b.id = w.branch_id AND b.status = 'active'
+       JOIN product_branch_availability a
+         ON a.product_id = p.id AND a.branch_id = w.branch_id
        LEFT JOIN inventory_balances ib
          ON ib.product_id = p.id AND ib.warehouse_id = w.id
-       WHERE (p.status = 'active' OR ib.product_id IS NOT NULL) ${warehouseFilter}
+       WHERE (p.status = 'active' OR ib.product_id IS NOT NULL)
+         AND (a.status = 'active' OR ib.product_id IS NOT NULL) ${warehouseFilter}
        ORDER BY p.name, w.code`,
       [branchId, ...(warehouseIds ?? [])],
     )

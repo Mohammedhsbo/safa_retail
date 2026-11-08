@@ -4,6 +4,7 @@ import { initialSchemaStatements } from './001_initial_schema'
 import { weightedAverageInventoryStatements } from './002_weighted_average_inventory'
 import { salesTaxSettingsStatements } from './003_sales_tax_settings'
 import { supplierInvoiceReferenceStatements } from './004_supplier_invoice_reference'
+import { branchProductAvailabilityStatements } from './005_branch_product_availability'
 import type { SqliteDatabase } from '../SqliteDatabase'
 
 export interface DatabaseMigration {
@@ -44,6 +45,11 @@ export const migrations: readonly DatabaseMigration[] = [
     version: 4,
     name: 'supplier_invoice_reference',
     statements: supplierInvoiceReferenceStatements,
+  },
+  {
+    version: 5,
+    name: 'branch_product_availability',
+    statements: branchProductAvailabilityStatements,
   },
 ]
 

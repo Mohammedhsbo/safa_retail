@@ -107,6 +107,7 @@ beforeEach(async () => {
     branchId,
     code: 'main',
     name: 'Main Warehouse',
+    warehouseType: 'fabrics',
   })
   productId = await catalog.createProduct(ownerId, {
     sku: 'SALE-ITEM',
@@ -116,7 +117,7 @@ beforeEach(async () => {
     sellingPrice: '10',
     minimumStock: '0',
     barcodes: [{ barcode: '0123456789', unitId }],
-  })
+  }, branchId)
   customerId = await createCustomer()
   await inventory.adjustStock(ownerId, {
     productId,
@@ -259,7 +260,7 @@ describe('sales and offline POS services', () => {
       sellingPrice: '10',
       minimumStock: '0',
       conversions: [{ unitId: carton.id, factorToBase: '3' }],
-    })
+    }, branchId)
     await inventory.adjustStock(ownerId, {
       productId: boxedProductId,
       warehouseId,

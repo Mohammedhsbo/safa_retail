@@ -98,7 +98,9 @@ export class ReportsService {
         throw new ReportsError('The report user is not active')
       }
 
-      const isOwner = principal.roleCodes.includes('system_owner')
+      const isOwner = principal.roleCodes.some((role) =>
+        ['system_owner', 'general_manager', 'admin'].includes(role),
+      )
       const allowedBranches = await this.repository.listAccessibleBranches(
         isOwner ? null : principal.branchIds,
         transaction,
@@ -429,6 +431,7 @@ export class ReportsService {
         quantity: bigint
         minimumStock: bigint
         value: bigint
+        warehouseTypes: Set<string>
       }>()
       let totalInventoryValue = 0n
       for (const branch of selectedBranches) {
@@ -454,6 +457,7 @@ export class ReportsService {
               quantity: 0n,
               minimumStock: this.decimal(row.minimum_stock, 'Minimum stock'),
               value: 0n,
+              warehouseTypes: new Set<string>(),
             }
             inventoryByProduct.set(inventoryKey, product)
           }
@@ -464,6 +468,11 @@ export class ReportsService {
           )
           product.quantity += quantity
           product.value += value
+          product.warehouseTypes.add(
+            typeof row.warehouse_type === 'string'
+              ? row.warehouse_type
+              : 'unknown',
+          )
           totalInventoryValue += value
         }
       }
@@ -474,6 +483,7 @@ export class ReportsService {
           product: product.name,
           quantity: formatDecimal(product.quantity),
           unit: product.unit,
+          warehouseTypes: Array.from(product.warehouseTypes).join(','),
           minimumStock: formatDecimal(product.minimumStock),
           averageUnitCost: formatDecimal(
             product.quantity === 0n

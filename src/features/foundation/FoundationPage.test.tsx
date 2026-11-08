@@ -87,7 +87,7 @@ describe('application foundation', () => {
     await waitFor(() => {
       expect(document.documentElement.lang).toBe('ar')
       expect(document.documentElement.dir).toBe('rtl')
-      expect(document.title).toBe('سفا ريتيل')
+      expect(document.title).toBe('سيف ريتيل')
     })
   })
 

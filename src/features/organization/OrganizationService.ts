@@ -36,6 +36,14 @@ const warehouseInputSchema = z.object({
   branchId: z.string().uuid(),
   code: locationCodeSchema,
   name: locationNameSchema,
+  warehouseType: z.enum([
+    'clothing_manufacturing',
+    'detergent_manufacturing',
+    'fabrics',
+  ]),
+  address: z.string().trim().max(500).nullable().optional(),
+  description: z.string().trim().max(1000).nullable().optional(),
+  status: z.enum(['active', 'inactive']).default('active'),
 })
 
 const organizationProfileSchema = z.object({
@@ -68,7 +76,14 @@ const warehouseRowSchema = z.object({
   branch_id: z.string().uuid(),
   code: z.string(),
   name: z.string(),
-  status: z.enum(['active', 'archived']),
+  warehouse_type: z.enum([
+    'clothing_manufacturing',
+    'detergent_manufacturing',
+    'fabrics',
+  ]).nullable(),
+  address: z.string().nullable(),
+  description: z.string().nullable(),
+  status: z.enum(['active', 'inactive', 'archived']),
   created_at: z.string(),
   updated_at: z.string(),
 })
@@ -89,7 +104,10 @@ export type Warehouse = {
   branchId: string
   code: string
   name: string
-  status: 'active' | 'archived'
+  warehouseType: 'clothing_manufacturing' | 'detergent_manufacturing' | 'fabrics' | null
+  address: string | null
+  description: string | null
+  status: 'active' | 'inactive' | 'archived'
   createdAt: string
   updatedAt: string
 }
@@ -164,8 +182,15 @@ export class OrganizationService {
 
   async listBranches(actorId: string): Promise<Branch[]> {
     await this.access.assertPermission(actorId, 'settings.manage')
+    const principal = await this.repository.getPrincipal(actorId)
+    if (!principal) throw new OrganizationError('The acting user is not active')
     const rows = await this.organizationRepository.listBranches()
-    return rows.map((row) => this.parseBranch(row))
+    return rows
+      .map((row) => this.parseBranch(row))
+      .filter((branch) =>
+        this.isGlobalBranchAdmin(principal.roleCodes) ||
+        principal.branchIds.includes(branch.id),
+      )
   }
 
   async listAccessibleBranches(actorId: string): Promise<Branch[]> {
@@ -178,7 +203,7 @@ export class OrganizationService {
       .map((row) => this.parseBranch(row))
       .filter((branch) =>
         branch.status === 'active' &&
-        (principal.roleCodes.includes('system_owner') ||
+        (this.isGlobalBranchAdmin(principal.roleCodes) ||
           principal.branchIds.includes(branch.id)),
       )
   }
@@ -197,6 +222,10 @@ export class OrganizationService {
         'settings.manage',
         transaction,
       )
+      const principal = await this.repository.getPrincipal(actorId, transaction)
+      if (!principal || !this.isGlobalBranchAdmin(principal.roleCodes)) {
+        throw new OrganizationError('Only administrators can create branches')
+      }
       await this.organizationRepository.createBranch(
         {
           id,
@@ -206,6 +235,11 @@ export class OrganizationService {
           phone: parsed.data.phone ?? null,
           createdAt: now,
         },
+        transaction,
+      )
+      await this.organizationRepository.seedBranchProductAvailability(
+        id,
+        now,
         transaction,
       )
       await this.repository.writeAudit(
@@ -240,6 +274,7 @@ export class OrganizationService {
         'settings.manage',
         transaction,
       )
+      await this.access.assertBranchAccess(actorId, branchId, transaction)
       const before = await this.getBranch(branchId, transaction)
       if (!before || before.status !== 'active') {
         throw new OrganizationError('The active branch does not exist')
@@ -283,6 +318,7 @@ export class OrganizationService {
         'settings.manage',
         transaction,
       )
+      await this.access.assertBranchAccess(actorId, branchId, transaction)
       const branch = await this.getBranch(branchId, transaction)
       if (!branch || branch.status !== 'active') {
         throw new OrganizationError('The active branch does not exist')
@@ -314,7 +350,7 @@ export class OrganizationService {
           beforeData: JSON.stringify({
             status: branch.status,
             activeWarehouseIds: warehouses
-              .filter((warehouse) => warehouse.status === 'active')
+              .filter((warehouse) => warehouse.status !== 'archived')
               .map((warehouse) => warehouse.id),
           }),
           afterData: JSON.stringify({ status: 'archived' }),
@@ -323,7 +359,7 @@ export class OrganizationService {
         transaction,
       )
       for (const warehouse of warehouses.filter(
-        (item) => item.status === 'active',
+        (item) => item.status !== 'archived',
       )) {
         await this.repository.writeAudit(
           {
@@ -343,8 +379,18 @@ export class OrganizationService {
 
   async listWarehouses(actorId: string): Promise<Warehouse[]> {
     await this.access.assertPermission(actorId, 'settings.manage')
+    const principal = await this.repository.getPrincipal(actorId)
+    if (!principal) throw new OrganizationError('The acting user is not active')
     const rows = await this.organizationRepository.listWarehouses()
-    return rows.map((row) => this.parseWarehouse(row))
+    return rows
+      .map((row) => this.parseWarehouse(row))
+      .filter((warehouse) =>
+        this.isGlobalBranchAdmin(principal.roleCodes) ||
+        (
+          principal.branchIds.includes(warehouse.branchId) &&
+          principal.warehouseIds.includes(warehouse.id)
+        ),
+      )
   }
 
   async listAccessibleWarehouses(
@@ -361,7 +407,7 @@ export class OrganizationService {
       .map((row) => this.parseWarehouse(row))
       .filter((warehouse) =>
         warehouse.status === 'active' &&
-        (principal.roleCodes.includes('system_owner') ||
+        (this.isGlobalBranchAdmin(principal.roleCodes) ||
           principal.warehouseIds.includes(warehouse.id)),
       )
   }
@@ -381,12 +427,21 @@ export class OrganizationService {
         transaction,
       )
       await this.assertActiveBranch(parsed.data.branchId, transaction)
+      await this.access.assertBranchAccess(
+        actorId,
+        parsed.data.branchId,
+        transaction,
+      )
       await this.organizationRepository.createWarehouse(
         {
           id,
           branchId: parsed.data.branchId,
           code: parsed.data.code,
           name: parsed.data.name,
+          warehouseType: parsed.data.warehouseType,
+          address: parsed.data.address ?? null,
+          description: parsed.data.description ?? null,
+          status: parsed.data.status,
           createdAt: now,
         },
         transaction,
@@ -424,10 +479,16 @@ export class OrganizationService {
         transaction,
       )
       const before = await this.getWarehouse(warehouseId, transaction)
-      if (!before || before.status !== 'active') {
+      if (!before || before.status === 'archived') {
         throw new OrganizationError('The active warehouse does not exist')
       }
+      await this.access.assertBranchAccess(actorId, before.branch_id, transaction)
       await this.assertActiveBranch(parsed.data.branchId, transaction)
+      await this.access.assertBranchAccess(
+        actorId,
+        parsed.data.branchId,
+        transaction,
+      )
 
       if (before.branch_id !== parsed.data.branchId) {
         await this.assertWarehouseCanMove(warehouseId, transaction)
@@ -467,9 +528,14 @@ export class OrganizationService {
         transaction,
       )
       const warehouse = await this.getWarehouse(warehouseId, transaction)
-      if (!warehouse || warehouse.status !== 'active') {
+      if (!warehouse || warehouse.status === 'archived') {
         throw new OrganizationError('The active warehouse does not exist')
       }
+      await this.access.assertBranchAccess(
+        actorId,
+        warehouse.branch_id,
+        transaction,
+      )
 
       await this.organizationRepository.archiveWarehouse(
         warehouseId,
@@ -567,6 +633,7 @@ export class OrganizationService {
     if (!parsed.success) {
       throw new OrganizationError('A branch record is invalid')
     }
+
     return {
       id: parsed.data.id,
       code: parsed.data.code,
@@ -586,10 +653,19 @@ export class OrganizationService {
       branchId: parsed.branch_id,
       code: parsed.code,
       name: parsed.name,
+      warehouseType: parsed.warehouse_type,
+      address: parsed.address,
+      description: parsed.description,
       status: parsed.status,
       createdAt: parsed.created_at,
       updatedAt: parsed.updated_at,
     }
+  }
+
+  private isGlobalBranchAdmin(roleCodes: readonly string[]): boolean {
+    return roleCodes.some((role) =>
+      ['system_owner', 'general_manager', 'admin'].includes(role),
+    )
   }
 
   private parseWarehouseRow(row: SqlRow) {
@@ -617,6 +693,9 @@ export class OrganizationService {
       branchId: warehouse.branch_id,
       code: warehouse.code,
       name: warehouse.name,
+      warehouseType: warehouse.warehouse_type,
+      address: warehouse.address,
+      description: warehouse.description,
       status: warehouse.status,
     }
   }

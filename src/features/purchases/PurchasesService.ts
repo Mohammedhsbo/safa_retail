@@ -321,11 +321,15 @@ export class PurchasesService {
       let total = 0n
       for (const inputItem of parsed.data.items) {
         const product = await transaction.query(
-          'SELECT id, status FROM products WHERE id = ?',
-          [inputItem.productId],
+          `SELECT id, status FROM products
+           WHERE id = ? AND EXISTS (
+             SELECT 1 FROM product_branch_availability
+             WHERE product_id = products.id AND branch_id = ? AND status = 'active'
+           )`,
+          [inputItem.productId, location.branchId],
         )
         if (!product[0] || product[0].status !== 'active') {
-          throw new PurchasesError('A purchased product does not exist or is inactive')
+          throw new PurchasesError('A purchased product does not exist, is inactive, or is not available in this branch')
         }
         const unit = await transaction.query(
           `SELECT u.decimal_places,

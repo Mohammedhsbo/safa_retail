@@ -1,0 +1,8 @@
+{
+  "installCommand": "corepack pnpm@10.12.1 install --frozen-lockfile",
+  "buildCommand": "corepack pnpm@10.12.1 --filter safa-retail-web build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/" }
+  ]
+}

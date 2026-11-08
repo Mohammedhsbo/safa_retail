@@ -50,7 +50,7 @@ export function LocalAuthenticationScreen({
         await authentication.login({ username, password })
       }
       clearWorkspace()
-      navigate('/dashboard', { replace: true })
+      navigate('/branch-selection', { replace: true })
     } catch (authError) {
       setError(
         initialSetup

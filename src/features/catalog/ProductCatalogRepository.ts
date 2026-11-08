@@ -370,6 +370,138 @@ export class ProductCatalogRepository {
     return row ?? null
   }
 
+  async getProductForBranch(
+    productId: string,
+    branchId: string,
+    executor: SqlExecutor = this.database,
+  ): Promise<SqlRow | null> {
+    const [row] = await executor.query(
+      `SELECT p.id, p.sku, p.name, p.category_id, p.brand_id, p.description,
+              p.base_unit_id, a.purchase_price, a.selling_price,
+              a.minimum_stock, p.status, p.created_at, p.updated_at
+       FROM products p
+       JOIN product_branch_availability a ON a.product_id = p.id
+       WHERE p.id = ? AND a.branch_id = ? AND a.status = 'active'`,
+      [productId, branchId],
+    )
+    return row ?? null
+  }
+
+  async getProductByBarcodeForBranch(
+    barcode: string,
+    branchId: string,
+    executor: SqlExecutor = this.database,
+  ): Promise<SqlRow | null> {
+    const [row] = await executor.query(
+      `SELECT p.id, p.sku, p.name, p.category_id, p.brand_id, p.description,
+              p.base_unit_id, a.purchase_price, a.selling_price,
+              a.minimum_stock, p.status, p.created_at, p.updated_at
+       FROM product_barcodes pb
+       JOIN products p ON p.id = pb.product_id
+       JOIN product_branch_availability a ON a.product_id = p.id
+       WHERE pb.barcode = ? AND a.branch_id = ? AND a.status = 'active'
+         AND p.status = 'active'`,
+      [barcode, branchId],
+    )
+    return row ?? null
+  }
+
+  async listProductsForBranch(
+    branchId: string,
+    executor: SqlExecutor = this.database,
+  ): Promise<SqlRow[]> {
+    return executor.query(
+      `SELECT p.id, p.sku, p.name, p.category_id, p.brand_id, p.description,
+              p.base_unit_id, a.purchase_price, a.selling_price,
+              a.minimum_stock, p.status, p.created_at, p.updated_at
+       FROM products p
+       JOIN product_branch_availability a ON a.product_id = p.id
+       WHERE a.branch_id = ? AND a.status = 'active' AND p.status <> 'archived'
+       ORDER BY p.name, p.sku`,
+      [branchId],
+    )
+  }
+
+  async hasProductBranchAvailability(
+    productId: string,
+    branchId: string,
+    executor: SqlExecutor = this.database,
+  ): Promise<boolean> {
+    const [row] = await executor.query<{ is_available: number }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM product_branch_availability
+         WHERE product_id = ? AND branch_id = ? AND status = 'active'
+       ) AS is_available`,
+      [productId, branchId],
+    )
+    return row?.is_available === 1
+  }
+
+  async createProductBranchAvailability(
+    input: {
+      productId: string
+      branchId: string
+      purchasePrice: string
+      sellingPrice: string
+      minimumStock: string
+      status: 'active' | 'inactive'
+      createdAt: string
+    },
+    executor: SqlExecutor = this.database,
+  ): Promise<void> {
+    await executor.run(
+      `INSERT INTO product_branch_availability
+         (product_id, branch_id, purchase_price, selling_price, minimum_stock,
+          status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        input.productId,
+        input.branchId,
+        input.purchasePrice,
+        input.sellingPrice,
+        input.minimumStock,
+        input.status,
+        input.createdAt,
+        input.createdAt,
+      ],
+    )
+  }
+
+  async updateProductBranchAvailability(
+    productId: string,
+    branchId: string,
+    input: { purchasePrice: string; sellingPrice: string; minimumStock: string },
+    updatedAt: string,
+    executor: SqlExecutor = this.database,
+  ): Promise<void> {
+    await executor.run(
+      `UPDATE product_branch_availability
+       SET purchase_price = ?, selling_price = ?, minimum_stock = ?, updated_at = ?
+       WHERE product_id = ? AND branch_id = ? AND status = 'active'`,
+      [
+        input.purchasePrice,
+        input.sellingPrice,
+        input.minimumStock,
+        updatedAt,
+        productId,
+        branchId,
+      ],
+    )
+  }
+
+  async setProductBranchAvailabilityStatus(
+    productId: string,
+    branchId: string,
+    status: 'active' | 'inactive',
+    updatedAt: string,
+    executor: SqlExecutor = this.database,
+  ): Promise<void> {
+    await executor.run(
+      'UPDATE product_branch_availability SET status = ?, updated_at = ? WHERE product_id = ? AND branch_id = ?',
+      [status, updatedAt, productId, branchId],
+    )
+  }
+
   async listProducts(executor: SqlExecutor = this.database): Promise<SqlRow[]> {
     return executor.query(
       `SELECT id, sku, name, category_id, brand_id, description, base_unit_id,

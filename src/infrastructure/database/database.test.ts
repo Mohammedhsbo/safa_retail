@@ -62,6 +62,7 @@ describe('SQLite database foundation', () => {
       'permissions',
       'product_attributes',
       'product_barcodes',
+      'product_branch_availability',
       'product_images',
       'product_unit_conversions',
       'production_outputs',
@@ -96,6 +97,7 @@ describe('SQLite database foundation', () => {
       { version: 2 },
       { version: 3 },
       { version: 4 },
+      { version: 5 },
     ])
     expect(await settings.get('application.locale')).toBe('ar')
     expect(await settings.get('setup.completed')).toBe('false')
@@ -124,7 +126,7 @@ describe('SQLite database foundation', () => {
   it('rolls back a failed migration without leaving partial schema changes', async () => {
     await applyMigrations(database)
     const failingMigration = {
-      version: 5,
+      version: 6,
       name: 'failing_migration',
       statements: [
         'CREATE TABLE migration_probe (id TEXT PRIMARY KEY)',
@@ -143,7 +145,13 @@ describe('SQLite database foundation', () => {
     ).toEqual([])
     expect(
       await database.query('SELECT version FROM database_migrations ORDER BY version'),
-    ).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }])
+    ).toEqual([
+      { version: 1 },
+      { version: 2 },
+      { version: 3 },
+      { version: 4 },
+      { version: 5 },
+    ])
   })
 
   it('upgrades an existing schema version 1 database without changing its ledger data', async () => {
@@ -178,6 +186,7 @@ describe('SQLite database foundation', () => {
       { version: 2 },
       { version: 3 },
       { version: 4 },
+      { version: 5 },
     ])
     expect(movementColumns.map((column) => column.name)).toContain('unit_cost')
     expect(saleColumns.map((column) => column.name)).toContain('tax_rate')
