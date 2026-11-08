@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+:root {
+  font-family:
+    "Noto Sans Arabic", "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+  color: #172a26;
+  background: #f7f8f6;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+
+  --surface: #f7f8f6;
+  --ink: #172a26;
+  --muted: #687772;
+  --brand: #176b54;
+  --brand-strong: #10513f;
+  --brand-wash: #e7f2ed;
+  --brand-border: #c4dfd3;
+  --accent: #c28a4b;
+  --border: #e4e9e5;
+  --shadow-soft: 0 8px 24px rgb(22 53 43 / 5%);
+  --shadow-card: 0 24px 64px rgb(22 53 43 / 8%);
+  --shadow-brand: 0 8px 20px rgb(23 107 84 / 20%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--surface);
+  min-height: 100dvh;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  overscroll-behavior-y: contain;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.android-barcode-scanner-active,
+body.android-barcode-scanner-active {
+  background: transparent;
+}
+
+body.android-barcode-scanner-active {
+  visibility: hidden;
+}
+
+body.android-barcode-scanner-active .android-barcode-scanner-overlay {
+  visibility: visible;
+}
+
+.android-barcode-scanner-overlay {
+  position: fixed;
+  z-index: 2147483647;
+  inset: 0;
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  padding: max(1.5rem, env(safe-area-inset-top)) 1.5rem
+    max(1.5rem, env(safe-area-inset-bottom));
+  color: white;
+  pointer-events: none;
+}
+
+.android-barcode-scanner-controls {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  text-align: center;
+  pointer-events: auto;
+}
+
+.android-barcode-scanner-controls h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.android-barcode-scanner-controls p {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+}
+
+::selection {
+  color: white;
+  background: var(--brand);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 500ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
