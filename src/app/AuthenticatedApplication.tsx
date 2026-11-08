@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowDownRight, ArrowUpRight, Boxes, ChartNoAxesCombined, CircleDollarSign, ClipboardList, PackageSearch, ReceiptText, ShoppingCart, TrendingUp } from 'lucide-react'
 import { useRetailApplicationServices } from './RetailApplicationServices'
