@@ -1,0 +1,14 @@
+# Query: الموقع
+# Flags: WordMatch
+# ContextLines: 1
+
+الفرع results - 1 file
+
+apps\web\src\shared\i18n\resources.ts:
+   53          databaseHealth: 'صحة قاعدة البيانات',
+   54:         changeLocation: 'تغيير الموقع',
+   55          reports: 'التقارير',
+
+  1الفرع9          loadFailed: 'تعذر تحميل المواقع المتاحة.',
+  130:         createFailed: 'تعذر إنشاء الموقع.',
+  131          back: 'رجوع',

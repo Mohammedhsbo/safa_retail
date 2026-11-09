@@ -1,0 +1,851 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model application_settings {
+  key        String @id
+  value      String
+  updated_at String
+}
+
+model audit_logs {
+  id            String  @id
+  actor_user_id String?
+  action        String
+  entity_type   String
+  entity_id     String
+  before_data   String?
+  after_data    String?
+  occurred_at   String
+  created_at    String
+  users         users?  @relation(fields: [actor_user_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([actor_user_id, occurred_at], map: "idx_audit_actor_date")
+  @@index([entity_type, entity_id, occurred_at], map: "idx_audit_entity_date")
+}
+
+model branches {
+  id                                                       String                 @id
+  code                                                     String                 @unique(map: "sqlite_autoindex_branches_2")
+  name                                                     String
+  address                                                  String?
+  phone                                                    String?
+  status                                                   String
+  created_at                                               String
+  updated_at                                               String
+  cashboxes                                                cashboxes[]
+  expenses                                                 expenses[]
+  manufacturing_orders                                     manufacturing_orders[]
+  purchases                                                purchases[]
+  sales                                                    sales[]
+  sales_tax_settings                                       sales_tax_settings?
+  stock_transfers_stock_transfers_to_branch_idTobranches   stock_transfers[]      @relation("stock_transfers_to_branch_idTobranches")
+  stock_transfers_stock_transfers_from_branch_idTobranches stock_transfers[]      @relation("stock_transfers_from_branch_idTobranches")
+  user_branch_access                                       user_branch_access[]
+  warehouses                                               warehouses[]
+  product_branch_availability                              product_branch_availability[]
+}
+
+model brands {
+  id         String     @id
+  name       String     @unique(map: "sqlite_autoindex_brands_2")
+  status     String
+  created_at String
+  updated_at String
+  products   products[]
+}
+
+model business_activities {
+  id         String @id
+  code       String @unique(map: "sqlite_autoindex_business_activities_2")
+  name       String
+  enabled    Int    @default(0)
+  created_at String
+  updated_at String
+
+  @@index([enabled], map: "idx_business_activities_enabled")
+}
+
+model cash_movements {
+  id            String    @id
+  cashbox_id    String
+  movement_type String
+  amount        String
+  source_type   String
+  source_id     String
+  occurred_at   String
+  created_by    String?
+  created_at    String
+  users         users?    @relation(fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  cashboxes     cashboxes @relation(fields: [cashbox_id], references: [id], onUpdate: NoAction)
+
+  @@index([source_type, source_id], map: "idx_cash_movements_source")
+  @@index([cashbox_id, occurred_at], map: "idx_cash_movements_cashbox_date")
+}
+
+model cashboxes {
+  id             String           @id
+  branch_id      String
+  code           String
+  name           String
+  status         String
+  created_at     String
+  updated_at     String
+  cash_movements cash_movements[]
+  branches       branches         @relation(fields: [branch_id], references: [id], onUpdate: NoAction)
+
+  @@unique([id, branch_id], map: "sqlite_autoindex_cashboxes_3")
+  @@unique([branch_id, code], map: "sqlite_autoindex_cashboxes_2")
+  @@index([branch_id], map: "idx_cashboxes_branch")
+}
+
+model categories {
+  id               String       @id
+  parent_id        String?
+  name             String
+  code             String?      @unique(map: "sqlite_autoindex_categories_2")
+  status           String
+  created_at       String
+  updated_at       String
+  categories       categories?  @relation("categoriesTocategories", fields: [parent_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  other_categories categories[] @relation("categoriesTocategories")
+  products         products[]
+}
+
+model customers {
+  id         String  @id
+  code       String  @unique(map: "sqlite_autoindex_customers_2")
+  name       String
+  phone      String?
+  email      String?
+  address    String?
+  notes      String?
+  status     String
+  created_at String
+  updated_at String
+  sales      sales[]
+
+  @@index([name], map: "idx_customers_name")
+}
+
+model database_migrations {
+  version    Int    @id @default(autoincrement())
+  name       String
+  checksum   String
+  applied_at String
+}
+
+model expenses {
+  id          String   @id
+  branch_id   String
+  category    String
+  amount      String
+  description String
+  status      String
+  incurred_at String
+  created_by  String?
+  created_at  String
+  updated_at  String
+  users       users?   @relation(fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  branches    branches @relation(fields: [branch_id], references: [id], onUpdate: NoAction)
+
+  @@index([branch_id, incurred_at], map: "idx_expenses_branch_date")
+}
+
+model inventory_balances {
+  product_id        String
+  warehouse_id      String
+  on_hand_quantity  String     @default("0")
+  reserved_quantity String     @default("0")
+  updated_at        String
+  average_unit_cost String     @default("0")
+  warehouses        warehouses @relation(fields: [warehouse_id], references: [id], onUpdate: NoAction)
+  products          products   @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+
+  @@id([product_id, warehouse_id])
+  @@index([warehouse_id, product_id], map: "idx_balances_warehouse_product")
+}
+
+model inventory_movements {
+  id                String            @id
+  product_id        String
+  warehouse_id      String
+  movement_type     String
+  quantity          String
+  unit_id           String
+  source_type       String
+  source_id         String
+  occurred_at       String
+  created_by        String?
+  created_at        String
+  unit_cost         String            @default("0")
+  users             users?            @relation(fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  measurement_units measurement_units @relation(fields: [unit_id], references: [id], onUpdate: NoAction)
+  warehouses        warehouses        @relation(fields: [warehouse_id], references: [id], onUpdate: NoAction)
+  products          products          @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+
+  @@index([source_type, source_id], map: "idx_inventory_source")
+  @@index([product_id, warehouse_id, occurred_at], map: "idx_inventory_product_warehouse_date")
+}
+
+model manufacturing_costs {
+  id                   String               @id
+  order_id             String
+  cost_type            String
+  amount               String
+  description          String
+  incurred_at          String
+  created_at           String
+  manufacturing_orders manufacturing_orders @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+
+  @@index([order_id, incurred_at], map: "idx_manufacturing_costs_order_date")
+}
+
+model manufacturing_materials {
+  id                   String               @id
+  order_id             String
+  product_id           String
+  unit_id              String
+  planned_quantity     String
+  consumed_quantity    String?
+  unit_cost            String?
+  consumed_at          String?
+  created_at           String
+  updated_at           String
+  measurement_units    measurement_units    @relation(fields: [unit_id], references: [id], onUpdate: NoAction)
+  products             products             @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  manufacturing_orders manufacturing_orders @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+
+  @@index([product_id], map: "idx_manufacturing_material_product")
+  @@index([order_id], map: "idx_manufacturing_material_order")
+}
+
+model manufacturing_orders {
+  id                                                                 String                    @id
+  order_number                                                       String                    @unique(map: "sqlite_autoindex_manufacturing_orders_2")
+  branch_id                                                          String
+  warehouse_id                                                       String
+  finished_product_id                                                String
+  planned_quantity                                                   String
+  actual_quantity                                                    String?
+  waste_quantity                                                     String?
+  status                                                             String
+  notes                                                              String?
+  created_by                                                         String?
+  approved_by                                                        String?
+  started_at                                                         String?
+  completed_at                                                       String?
+  created_at                                                         String
+  updated_at                                                         String
+  manufacturing_costs                                                manufacturing_costs[]
+  manufacturing_materials                                            manufacturing_materials[]
+  warehouses_manufacturing_orders_warehouse_id_branch_idTowarehouses warehouses                @relation("manufacturing_orders_warehouse_id_branch_idTowarehouses", fields: [warehouse_id, branch_id], references: [id, branch_id], onUpdate: NoAction)
+  users_manufacturing_orders_approved_byTousers                      users?                    @relation("manufacturing_orders_approved_byTousers", fields: [approved_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  users_manufacturing_orders_created_byTousers                       users?                    @relation("manufacturing_orders_created_byTousers", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  products                                                           products                  @relation(fields: [finished_product_id], references: [id], onUpdate: NoAction)
+  warehouses_manufacturing_orders_warehouse_idTowarehouses           warehouses                @relation("manufacturing_orders_warehouse_idTowarehouses", fields: [warehouse_id], references: [id], onUpdate: NoAction)
+  branches                                                           branches                  @relation(fields: [branch_id], references: [id], onUpdate: NoAction)
+  production_outputs                                                 production_outputs[]
+  production_stages                                                  production_stages[]
+
+  @@index([finished_product_id, created_at], map: "idx_manufacturing_product")
+  @@index([branch_id, status], map: "idx_manufacturing_branch_status")
+}
+
+model measurement_units {
+  id                       String                     @id
+  code                     String                     @unique(map: "sqlite_autoindex_measurement_units_2")
+  name                     String
+  dimension                String
+  decimal_places           Int                        @default(0)
+  status                   String
+  created_at               String
+  updated_at               String
+  inventory_movements      inventory_movements[]
+  manufacturing_materials  manufacturing_materials[]
+  product_barcodes         product_barcodes[]
+  product_unit_conversions product_unit_conversions[]
+  production_outputs       production_outputs[]
+  products                 products[]
+  purchase_items           purchase_items[]
+  sale_items               sale_items[]
+  stock_count_items        stock_count_items[]
+  stock_transfer_items     stock_transfer_items[]
+}
+
+model permissions {
+  code             String             @id
+  description      String
+  role_permissions role_permissions[]
+}
+
+model product_attributes {
+  id         String   @id
+  product_id String
+  name       String
+  value      String
+  created_at String
+  updated_at String
+  products   products @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+
+  @@unique([product_id, name], map: "sqlite_autoindex_product_attributes_2")
+  @@index([product_id], map: "idx_product_attributes_product_id")
+}
+
+model product_barcodes {
+  id                String             @id
+  product_id        String
+  barcode           String             @unique(map: "sqlite_autoindex_product_barcodes_2")
+  unit_id           String?
+  created_at        String
+  measurement_units measurement_units? @relation(fields: [unit_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  products          products           @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+
+  @@unique([id, product_id], map: "sqlite_autoindex_product_barcodes_3")
+  @@index([product_id], map: "idx_product_barcodes_product_id")
+}
+
+model product_images {
+  id         String   @id
+  product_id String
+  file_path  String
+  mime_type  String
+  sort_order Int      @default(0)
+  created_at String
+  products   products @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+
+  @@unique([product_id, file_path], map: "sqlite_autoindex_product_images_2")
+  @@index([product_id, sort_order], map: "idx_product_images_product_order")
+}
+
+model product_unit_conversions {
+  id                String            @id
+  product_id        String
+  unit_id           String
+  factor_to_base    String
+  created_at        String
+  updated_at        String
+  measurement_units measurement_units @relation(fields: [unit_id], references: [id], onUpdate: NoAction)
+  products          products          @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+
+  @@unique([product_id, unit_id], map: "sqlite_autoindex_product_unit_conversions_2")
+  @@index([unit_id], map: "idx_conversions_unit_id")
+}
+
+model production_outputs {
+  id                   String               @id
+  order_id             String
+  product_id           String
+  unit_id              String
+  quantity             String
+  approved_by          String?
+  approved_at          String?
+  created_at           String
+  users                users?               @relation(fields: [approved_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  measurement_units    measurement_units    @relation(fields: [unit_id], references: [id], onUpdate: NoAction)
+  products             products             @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  manufacturing_orders manufacturing_orders @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+
+  @@index([order_id], map: "idx_production_outputs_order")
+}
+
+model production_stages {
+  id                   String               @id
+  order_id             String
+  name                 String
+  sequence             Int
+  status               String
+  started_at           String?
+  completed_at         String?
+  created_at           String
+  manufacturing_orders manufacturing_orders @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+
+  @@unique([order_id, sequence], map: "sqlite_autoindex_production_stages_2")
+  @@index([order_id, sequence], map: "idx_production_stages_order")
+}
+
+model products {
+  id                       String                     @id
+  sku                      String                     @unique(map: "sqlite_autoindex_products_2")
+  name                     String
+  category_id              String?
+  brand_id                 String?
+  description              String?
+  base_unit_id             String
+  purchase_price           String
+  selling_price            String
+  minimum_stock            String                     @default("0")
+  attributes               String                     @default("{}")
+  status                   String
+  created_at               String
+  updated_at               String
+  inventory_balances       inventory_balances[]
+  inventory_movements      inventory_movements[]
+  manufacturing_materials  manufacturing_materials[]
+  manufacturing_orders     manufacturing_orders[]
+  product_attributes       product_attributes[]
+  product_barcodes         product_barcodes[]
+  product_images           product_images[]
+  product_unit_conversions product_unit_conversions[]
+  production_outputs       production_outputs[]
+  product_branch_availability product_branch_availability[]
+  measurement_units        measurement_units          @relation(fields: [base_unit_id], references: [id], onUpdate: NoAction)
+  brands                   brands?                    @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  categories               categories?                @relation(fields: [category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  purchase_items           purchase_items[]
+  sale_items               sale_items[]
+  stock_count_items        stock_count_items[]
+  stock_transfer_items     stock_transfer_items[]
+
+  @@index([status, name], map: "idx_products_status_name")
+  @@index([brand_id], map: "idx_products_brand_id")
+  @@index([category_id], map: "idx_products_category_id")
+}
+
+model product_branch_availability {
+  product_id    String
+  branch_id     String
+  purchase_price String
+  selling_price  String
+  minimum_stock  String   @default("0")
+  status         String
+  created_at     String
+  updated_at     String
+  branches       branches @relation(fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  products       products @relation(fields: [product_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@id([product_id, branch_id])
+  @@index([branch_id, status, product_id], map: "idx_product_branch_availability_branch")
+}
+
+model purchase_items {
+  id                    String                  @id
+  purchase_id           String
+  product_id            String
+  unit_id               String
+  quantity              String
+  unit_cost             String
+  discount_total        String                  @default("0")
+  tax_total             String                  @default("0")
+  line_total            String
+  created_at            String
+  measurement_units     measurement_units       @relation(fields: [unit_id], references: [id], onUpdate: NoAction)
+  products              products                @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  purchases             purchases               @relation(fields: [purchase_id], references: [id], onUpdate: NoAction)
+  purchase_return_items purchase_return_items[]
+
+  @@index([product_id], map: "idx_purchase_items_product_id")
+  @@index([purchase_id], map: "idx_purchase_items_purchase_id")
+}
+
+model purchase_payments {
+  id             String    @id
+  purchase_id    String
+  amount         String
+  payment_method String
+  reference      String?
+  paid_by        String?
+  paid_at        String
+  created_at     String
+  users          users?    @relation(fields: [paid_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  purchases      purchases @relation(fields: [purchase_id], references: [id], onUpdate: NoAction)
+
+  @@index([purchase_id, paid_at], map: "idx_purchase_payments_purchase_id")
+}
+
+model purchase_return_items {
+  id               String           @id
+  return_id        String
+  purchase_item_id String
+  quantity         String
+  refund_amount    String
+  created_at       String
+  purchase_items   purchase_items   @relation(fields: [purchase_item_id], references: [id], onUpdate: NoAction)
+  purchase_returns purchase_returns @relation(fields: [return_id], references: [id], onUpdate: NoAction)
+
+  @@index([return_id], map: "idx_purchase_return_items_return_id")
+}
+
+model purchase_returns {
+  id                    String                  @id
+  purchase_id           String
+  return_number         String
+  status                String
+  reason                String
+  refund_total          String                  @default("0")
+  created_by            String?
+  created_at            String
+  updated_at            String
+  purchase_return_items purchase_return_items[]
+  users                 users?                  @relation(fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  purchases             purchases               @relation(fields: [purchase_id], references: [id], onUpdate: NoAction)
+
+  @@unique([purchase_id, return_number], map: "sqlite_autoindex_purchase_returns_2")
+  @@index([purchase_id, created_at], map: "idx_purchase_returns_purchase_id")
+}
+
+model purchases {
+  id                                                      String              @id
+  branch_id                                               String
+  warehouse_id                                            String
+  supplier_id                                             String
+  invoice_number                                          String
+  status                                                  String
+  subtotal                                                String
+  discount_total                                          String              @default("0")
+  tax_total                                               String              @default("0")
+  total                                                   String
+  notes                                                   String?
+  created_by                                              String?
+  received_at                                             String?
+  created_at                                              String
+  updated_at                                              String
+  supplier_invoice_number                                 String?
+  purchase_items                                          purchase_items[]
+  purchase_payments                                       purchase_payments[]
+  purchase_returns                                        purchase_returns[]
+  warehouses_purchases_warehouse_id_branch_idTowarehouses warehouses          @relation("purchases_warehouse_id_branch_idTowarehouses", fields: [warehouse_id, branch_id], references: [id, branch_id], onUpdate: NoAction)
+  users                                                   users?              @relation(fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  suppliers                                               suppliers           @relation(fields: [supplier_id], references: [id], onUpdate: NoAction)
+  warehouses_purchases_warehouse_idTowarehouses           warehouses          @relation("purchases_warehouse_idTowarehouses", fields: [warehouse_id], references: [id], onUpdate: NoAction)
+  branches                                                branches            @relation(fields: [branch_id], references: [id], onUpdate: NoAction)
+
+  @@unique([branch_id, invoice_number], map: "sqlite_autoindex_purchases_2")
+  @@index([supplier_id, created_at], map: "idx_purchases_supplier_date")
+  @@index([branch_id, created_at], map: "idx_purchases_branch_date")
+}
+
+model role_permissions {
+  role_id         String
+  permission_code String
+  permissions     permissions @relation(fields: [permission_code], references: [code], onUpdate: NoAction)
+  roles           roles       @relation(fields: [role_id], references: [id], onUpdate: NoAction)
+
+  @@id([role_id, permission_code])
+  @@index([permission_code], map: "idx_role_permissions_permission")
+}
+
+model roles {
+  id               String             @id
+  code             String             @unique(map: "sqlite_autoindex_roles_2")
+  name             String
+  is_system        Int                @default(0)
+  created_at       String
+  updated_at       String
+  role_permissions role_permissions[]
+  user_roles       user_roles[]
+}
+
+model sale_items {
+  id                 String               @id
+  sale_id            String
+  product_id         String
+  unit_id            String
+  quantity           String
+  unit_price         String
+  discount_total     String               @default("0")
+  tax_total          String               @default("0")
+  line_total         String
+  created_at         String
+  measurement_units  measurement_units    @relation(fields: [unit_id], references: [id], onUpdate: NoAction)
+  products           products             @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  sales              sales                @relation(fields: [sale_id], references: [id], onUpdate: NoAction)
+  sales_return_items sales_return_items[]
+
+  @@index([product_id], map: "idx_sale_items_product_id")
+  @@index([sale_id], map: "idx_sale_items_sale_id")
+}
+
+model sale_payments {
+  id             String  @id
+  sale_id        String
+  amount         String
+  payment_method String
+  reference      String?
+  received_by    String?
+  paid_at        String
+  created_at     String
+  users          users?  @relation(fields: [received_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  sales          sales   @relation(fields: [sale_id], references: [id], onUpdate: NoAction)
+
+  @@index([sale_id, paid_at], map: "idx_sale_payments_sale_id")
+}
+
+model sales {
+  id                                                  String          @id
+  branch_id                                           String
+  warehouse_id                                        String
+  customer_id                                         String?
+  invoice_number                                      String
+  status                                              String
+  subtotal                                            String
+  discount_total                                      String          @default("0")
+  tax_total                                           String          @default("0")
+  total                                               String
+  notes                                               String?
+  created_by                                          String?
+  created_at                                          String
+  updated_at                                          String
+  tax_rate                                            String          @default("0")
+  tax_mode                                            String          @default("exclusive")
+  sale_items                                          sale_items[]
+  sale_payments                                       sale_payments[]
+  warehouses_sales_warehouse_id_branch_idTowarehouses warehouses      @relation("sales_warehouse_id_branch_idTowarehouses", fields: [warehouse_id, branch_id], references: [id, branch_id], onUpdate: NoAction)
+  users                                               users?          @relation(fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  customers                                           customers?      @relation(fields: [customer_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  warehouses_sales_warehouse_idTowarehouses           warehouses      @relation("sales_warehouse_idTowarehouses", fields: [warehouse_id], references: [id], onUpdate: NoAction)
+  branches                                            branches        @relation(fields: [branch_id], references: [id], onUpdate: NoAction)
+  sales_returns                                       sales_returns[]
+
+  @@unique([branch_id, invoice_number], map: "sqlite_autoindex_sales_2")
+  @@index([customer_id, created_at], map: "idx_sales_customer_date")
+  @@index([branch_id, created_at], map: "idx_sales_branch_date")
+}
+
+model sales_return_items {
+  id            String        @id
+  return_id     String
+  sale_item_id  String
+  quantity      String
+  refund_amount String
+  created_at    String
+  sale_items    sale_items    @relation(fields: [sale_item_id], references: [id], onUpdate: NoAction)
+  sales_returns sales_returns @relation(fields: [return_id], references: [id], onUpdate: NoAction)
+
+  @@index([return_id], map: "idx_sales_return_items_return_id")
+}
+
+model sales_returns {
+  id                 String               @id
+  sale_id            String
+  return_number      String
+  status             String
+  reason             String
+  refund_total       String               @default("0")
+  created_by         String?
+  created_at         String
+  updated_at         String
+  sales_return_items sales_return_items[]
+  users              users?               @relation(fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  sales              sales                @relation(fields: [sale_id], references: [id], onUpdate: NoAction)
+
+  @@unique([sale_id, return_number], map: "sqlite_autoindex_sales_returns_2")
+  @@index([sale_id, created_at], map: "idx_sales_returns_sale_id")
+}
+
+model sales_tax_settings {
+  branch_id  String   @id
+  tax_rate   String   @default("0")
+  tax_mode   String   @default("exclusive")
+  updated_by String?
+  updated_at String
+  users      users?   @relation(fields: [updated_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  branches   branches @relation(fields: [branch_id], references: [id], onUpdate: NoAction)
+}
+
+model stock_count_items {
+  id                String            @id
+  stock_count_id    String
+  product_id        String
+  expected_quantity String
+  counted_quantity  String?
+  unit_id           String
+  notes             String?
+  measurement_units measurement_units @relation(fields: [unit_id], references: [id], onUpdate: NoAction)
+  products          products          @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  stock_counts      stock_counts      @relation(fields: [stock_count_id], references: [id], onUpdate: NoAction)
+
+  @@unique([stock_count_id, product_id], map: "sqlite_autoindex_stock_count_items_2")
+  @@index([product_id], map: "idx_stock_count_items_product")
+}
+
+model stock_counts {
+  id                                    String              @id
+  count_number                          String              @unique(map: "sqlite_autoindex_stock_counts_2")
+  warehouse_id                          String
+  status                                String
+  counted_by                            String?
+  approved_by                           String?
+  started_at                            String?
+  completed_at                          String?
+  created_at                            String
+  updated_at                            String
+  stock_count_items                     stock_count_items[]
+  users_stock_counts_approved_byTousers users?              @relation("stock_counts_approved_byTousers", fields: [approved_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  users_stock_counts_counted_byTousers  users?              @relation("stock_counts_counted_byTousers", fields: [counted_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  warehouses                            warehouses          @relation(fields: [warehouse_id], references: [id], onUpdate: NoAction)
+
+  @@index([warehouse_id, status], map: "idx_stock_counts_warehouse_status")
+}
+
+model stock_transfer_items {
+  id                String            @id
+  transfer_id       String
+  product_id        String
+  unit_id           String
+  quantity          String
+  received_quantity String?
+  created_at        String
+  measurement_units measurement_units @relation(fields: [unit_id], references: [id], onUpdate: NoAction)
+  products          products          @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  stock_transfers   stock_transfers   @relation(fields: [transfer_id], references: [id], onUpdate: NoAction)
+
+  @@index([transfer_id], map: "idx_transfer_items_transfer_id")
+}
+
+model stock_transfers {
+  id                                                                      String                 @id
+  transfer_number                                                         String                 @unique(map: "sqlite_autoindex_stock_transfers_2")
+  from_branch_id                                                          String
+  from_warehouse_id                                                       String
+  to_branch_id                                                            String
+  to_warehouse_id                                                         String
+  status                                                                  String
+  notes                                                                   String?
+  requested_by                                                            String
+  approved_by                                                             String?
+  received_by                                                             String?
+  created_at                                                              String
+  updated_at                                                              String
+  stock_transfer_items                                                    stock_transfer_items[]
+  warehouses_stock_transfers_to_warehouse_id_to_branch_idTowarehouses     warehouses             @relation("stock_transfers_to_warehouse_id_to_branch_idTowarehouses", fields: [to_warehouse_id, to_branch_id], references: [id, branch_id], onUpdate: NoAction)
+  warehouses_stock_transfers_from_warehouse_id_from_branch_idTowarehouses warehouses             @relation("stock_transfers_from_warehouse_id_from_branch_idTowarehouses", fields: [from_warehouse_id, from_branch_id], references: [id, branch_id], onUpdate: NoAction)
+  users_stock_transfers_received_byTousers                                users?                 @relation("stock_transfers_received_byTousers", fields: [received_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  users_stock_transfers_approved_byTousers                                users?                 @relation("stock_transfers_approved_byTousers", fields: [approved_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  users_stock_transfers_requested_byTousers                               users                  @relation("stock_transfers_requested_byTousers", fields: [requested_by], references: [id], onUpdate: NoAction)
+  warehouses_stock_transfers_to_warehouse_idTowarehouses                  warehouses             @relation("stock_transfers_to_warehouse_idTowarehouses", fields: [to_warehouse_id], references: [id], onUpdate: NoAction)
+  branches_stock_transfers_to_branch_idTobranches                         branches               @relation("stock_transfers_to_branch_idTobranches", fields: [to_branch_id], references: [id], onUpdate: NoAction)
+  warehouses_stock_transfers_from_warehouse_idTowarehouses                warehouses             @relation("stock_transfers_from_warehouse_idTowarehouses", fields: [from_warehouse_id], references: [id], onUpdate: NoAction)
+  branches_stock_transfers_from_branch_idTobranches                       branches               @relation("stock_transfers_from_branch_idTobranches", fields: [from_branch_id], references: [id], onUpdate: NoAction)
+
+  @@index([to_warehouse_id, created_at], map: "idx_transfers_to_warehouse")
+  @@index([from_warehouse_id, created_at], map: "idx_transfers_from_warehouse")
+  @@index([status, created_at], map: "idx_transfers_status_date")
+}
+
+model suppliers {
+  id         String      @id
+  code       String      @unique(map: "sqlite_autoindex_suppliers_2")
+  name       String
+  phone      String?
+  email      String?
+  address    String?
+  notes      String?
+  status     String
+  created_at String
+  updated_at String
+  purchases  purchases[]
+
+  @@index([name], map: "idx_suppliers_name")
+}
+
+model user_branch_access {
+  user_id   String
+  branch_id String
+  branches  branches @relation(fields: [branch_id], references: [id], onUpdate: NoAction)
+  users     users    @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@id([user_id, branch_id])
+}
+
+model user_roles {
+  user_id String
+  role_id String
+  roles   roles  @relation(fields: [role_id], references: [id], onUpdate: NoAction)
+  users   users  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@id([user_id, role_id])
+  @@index([role_id], map: "idx_user_roles_role_id")
+}
+
+model user_warehouse_access {
+  user_id      String
+  warehouse_id String
+  warehouses   warehouses @relation(fields: [warehouse_id], references: [id], onUpdate: NoAction)
+  users        users      @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@id([user_id, warehouse_id])
+}
+
+model users {
+  id                                                           String                  @id
+  auth_sessions                                                auth_sessions[]
+  username                                                     String                  @unique(map: "sqlite_autoindex_users_2")
+  password_hash                                                String
+  display_name                                                 String
+  status                                                       String
+  created_at                                                   String
+  updated_at                                                   String
+  audit_logs                                                   audit_logs[]
+  cash_movements                                               cash_movements[]
+  expenses                                                     expenses[]
+  inventory_movements                                          inventory_movements[]
+  manufacturing_orders_manufacturing_orders_approved_byTousers manufacturing_orders[]  @relation("manufacturing_orders_approved_byTousers")
+  manufacturing_orders_manufacturing_orders_created_byTousers  manufacturing_orders[]  @relation("manufacturing_orders_created_byTousers")
+  production_outputs                                           production_outputs[]
+  purchase_payments                                            purchase_payments[]
+  purchase_returns                                             purchase_returns[]
+  purchases                                                    purchases[]
+  sale_payments                                                sale_payments[]
+  sales                                                        sales[]
+  sales_returns                                                sales_returns[]
+  sales_tax_settings                                           sales_tax_settings[]
+  stock_counts_stock_counts_approved_byTousers                 stock_counts[]          @relation("stock_counts_approved_byTousers")
+  stock_counts_stock_counts_counted_byTousers                  stock_counts[]          @relation("stock_counts_counted_byTousers")
+  stock_transfers_stock_transfers_received_byTousers           stock_transfers[]       @relation("stock_transfers_received_byTousers")
+  stock_transfers_stock_transfers_approved_byTousers           stock_transfers[]       @relation("stock_transfers_approved_byTousers")
+  stock_transfers_stock_transfers_requested_byTousers          stock_transfers[]       @relation("stock_transfers_requested_byTousers")
+  user_branch_access                                           user_branch_access[]
+  user_roles                                                   user_roles[]
+  user_warehouse_access                                        user_warehouse_access[]
+}
+
+model auth_sessions {
+  id         String    @id
+  user_id    String
+  token_hash String    @unique
+  expires_at DateTime  @db.Timestamptz(3)
+  revoked_at DateTime? @db.Timestamptz(3)
+  created_at DateTime  @default(now()) @db.Timestamptz(3)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, expires_at])
+}
+
+model warehouses {
+  id                                                                           String                  @id
+  branch_id                                                                    String
+  code                                                                         String
+  name                                                                         String
+  warehouse_type    String?
+  address           String?
+  description       String?
+  is_active         Boolean                 @default(true)
+  status                                                                       String
+  created_at                                                                   String
+  updated_at                                                                   String
+  inventory_balances                                                           inventory_balances[]
+  inventory_movements                                                          inventory_movements[]
+  manufacturing_orders_manufacturing_orders_warehouse_id_branch_idTowarehouses manufacturing_orders[]  @relation("manufacturing_orders_warehouse_id_branch_idTowarehouses")
+  manufacturing_orders_manufacturing_orders_warehouse_idTowarehouses           manufacturing_orders[]  @relation("manufacturing_orders_warehouse_idTowarehouses")
+  purchases_purchases_warehouse_id_branch_idTowarehouses                       purchases[]             @relation("purchases_warehouse_id_branch_idTowarehouses")
+  purchases_purchases_warehouse_idTowarehouses                                 purchases[]             @relation("purchases_warehouse_idTowarehouses")
+  sales_sales_warehouse_id_branch_idTowarehouses                               sales[]                 @relation("sales_warehouse_id_branch_idTowarehouses")
+  sales_sales_warehouse_idTowarehouses                                         sales[]                 @relation("sales_warehouse_idTowarehouses")
+  stock_counts                                                                 stock_counts[]
+  stock_transfers_stock_transfers_to_warehouse_id_to_branch_idTowarehouses     stock_transfers[]       @relation("stock_transfers_to_warehouse_id_to_branch_idTowarehouses")
+  stock_transfers_stock_transfers_from_warehouse_id_from_branch_idTowarehouses stock_transfers[]       @relation("stock_transfers_from_warehouse_id_from_branch_idTowarehouses")
+  stock_transfers_stock_transfers_to_warehouse_idTowarehouses                  stock_transfers[]       @relation("stock_transfers_to_warehouse_idTowarehouses")
+  stock_transfers_stock_transfers_from_warehouse_idTowarehouses                stock_transfers[]       @relation("stock_transfers_from_warehouse_idTowarehouses")
+  user_warehouse_access                                                        user_warehouse_access[]
+  branches                                                                     branches                @relation(fields: [branch_id], references: [id], onUpdate: NoAction)
+
+  @@unique([id, branch_id], map: "sqlite_autoindex_warehouses_3")
+  @@unique([branch_id, code], map: "sqlite_autoindex_warehouses_2")
+  @@index([branch_id], map: "idx_warehouses_branch_id")
+}

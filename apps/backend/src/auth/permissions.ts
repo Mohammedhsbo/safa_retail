@@ -1,0 +1,40 @@
+export const permissionDescriptions = {
+  'products.read': 'View the product catalog',
+  'products.create': 'Create products',
+  'products.update': 'Update products',
+  'products.delete': 'Archive products',
+  'sales.read': 'View sales',
+  'sales.create': 'Create sales',
+  'sales.cancel': 'Cancel sales',
+  'sales.discount': 'Apply sales discounts',
+  'sales.returns': 'Process sales returns',
+  'purchases.read': 'View purchases',
+  'purchases.create': 'Create purchases',
+  'purchases.returns': 'Process purchase returns',
+  'inventory.read': 'View inventory',
+  'inventory.adjust': 'Adjust inventory',
+  'inventory.transfer': 'Transfer inventory',
+  'inventory.count': 'Perform stock counts',
+  'customers.manage': 'Manage customers',
+  'suppliers.manage': 'Manage suppliers',
+  'accounting.read': 'View accounting records',
+  'accounting.manage': 'Manage accounting records',
+  'reports.read': 'View financial reports',
+  'users.manage': 'Manage users',
+  'roles.manage': 'Manage roles and permission grants',
+  'settings.manage': 'Manage application settings',
+  'manufacturing.manage': 'Manage manufacturing',
+} as const
+
+export type PermissionCode = keyof typeof permissionDescriptions
+
+export const systemRoles = [
+  'system_owner',
+  'general_manager',
+  'branch_manager',
+  'warehouse_manager',
+  'sales_employee',
+  'purchasing_employee',
+  'accountant',
+  'manufacturing_employee',
+] as const

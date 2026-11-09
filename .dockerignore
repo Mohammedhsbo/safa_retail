@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+dist
+**/dist
+coverage
+**/coverage
+.git
+.idea
+.env
+**/.env
+.env.*
+**/.env.*
+.env.docker
+**/.env.docker
+apps/web/android
+apps/web/.gradle
+apps/web/build

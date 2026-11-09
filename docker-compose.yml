@@ -1,0 +1,108 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    env_file:
+      - .env.docker
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - safa_postgres_data:/var/lib/postgresql/data
+    networks:
+      - safa-dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/dev.Dockerfile
+    image: safa-retail-dev
+    env_file:
+      - .env.docker
+    command:
+      - sh
+      - -c
+      - pnpm --filter @safa/backend db:generate && pnpm --filter @safa/backend db:migrate:deploy && pnpm --filter @safa/backend dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/backend/src:/workspace/apps/backend/src
+      - ./apps/backend/prisma:/workspace/apps/backend/prisma
+      - ./apps/web/src:/workspace/apps/web/src:ro
+    networks:
+      - safa-dev-network
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/v1/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    init: true
+
+  web:
+    image: safa-retail-dev
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_URL: ""
+      POSTGRES_PASSWORD: ""
+      JWT_SECRET: ""
+      JWT_REFRESH_SECRET: ""
+      CHOKIDAR_USEPOLLING: "true"
+    command:
+      - pnpm
+      - --filter
+      - safa-retail-web
+      - exec
+      - vite
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5173"
+      - --strictPort
+    ports:
+      - "${WEB_PORT:-5173}:5173"
+    volumes:
+      - ./apps/web/src:/workspace/apps/web/src
+      - ./apps/web/public:/workspace/apps/web/public
+      - ./apps/web/index.html:/workspace/apps/web/index.html
+      - ./apps/web/vite.config.ts:/workspace/apps/web/vite.config.ts
+      - ./packages/api-client/src:/workspace/packages/api-client/src
+      - ./packages/types/src:/workspace/packages/types/src
+    networks:
+      - safa-dev-network
+    depends_on:
+      backend:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:5173/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    init: true
+
+networks:
+  safa-dev-network:
+    driver: bridge
+
+volumes:
+  safa_postgres_data:
+    name: safa_postgres_data
