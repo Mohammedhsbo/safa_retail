@@ -36,12 +36,17 @@ export class SalesRepository {
 
   async getProduct(
     productId: string,
+    warehouseId: string,
     executor: SqlExecutor = this.database,
   ): Promise<SqlRow | null> {
     const [row] = await executor.query(
-      `SELECT id, sku, name, base_unit_id, selling_price, status
-       FROM products WHERE id = ?`,
-      [productId],
+      `SELECT p.id, p.sku, p.name, p.base_unit_id,
+              wa.selling_price, p.status
+       FROM products p
+       JOIN product_warehouse_availability wa
+         ON wa.product_id = p.id AND wa.warehouse_id = ?
+       WHERE p.id = ? AND wa.status = 'active'`,
+      [warehouseId, productId],
     )
     return row ?? null
   }
@@ -74,7 +79,7 @@ export class SalesRepository {
   ): Promise<SqlRow[]> {
     const pattern = `%${query}%`
     return executor.query(
-      `SELECT p.id, p.sku, p.name, p.base_unit_id, a.selling_price,
+      `SELECT p.id, p.sku, p.name, p.base_unit_id, wa.selling_price,
               u.name AS base_unit_name, COALESCE(ib.on_hand_quantity, '0') AS stock,
               (SELECT pb.barcode FROM product_barcodes pb
                WHERE pb.product_id = p.id AND pb.barcode = ? LIMIT 1) AS barcode,
@@ -84,6 +89,9 @@ export class SalesRepository {
        JOIN warehouses w ON w.id = ? AND w.status = 'active' AND w.is_active = TRUE
        JOIN product_branch_availability a
          ON a.product_id = p.id AND a.branch_id = w.branch_id AND a.status = 'active'
+       JOIN product_warehouse_availability wa
+         ON wa.product_id = p.id AND wa.branch_id = w.branch_id
+        AND wa.warehouse_id = w.id AND wa.status = 'active'
        JOIN measurement_units u ON u.id = p.base_unit_id
        LEFT JOIN inventory_balances ib
          ON ib.product_id = p.id AND ib.warehouse_id = ?
@@ -218,6 +226,8 @@ export class SalesRepository {
       taxTotal: string
       taxRate: string
       taxMode: 'exclusive' | 'inclusive'
+      additionalRate: string
+      additionalTotal: string
       total: string
       notes: string | null
       actorId: string
@@ -228,10 +238,11 @@ export class SalesRepository {
     await executor.run(
       `INSERT INTO sales
          (id, branch_id, warehouse_id, customer_id, invoice_number, status,
-          subtotal, discount_total, tax_total, tax_rate, tax_mode, total,
+          subtotal, discount_total, tax_total, tax_rate, tax_mode,
+          additional_rate, additional_total, total,
           notes, created_by,
           created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.id,
         input.branchId,
@@ -243,6 +254,8 @@ export class SalesRepository {
         input.taxTotal,
         input.taxRate,
         input.taxMode,
+        input.additionalRate,
+        input.additionalTotal,
         input.total,
         input.notes,
         input.actorId,
@@ -324,7 +337,8 @@ export class SalesRepository {
     const [row] = await executor.query(
       `SELECT s.id, s.branch_id, s.warehouse_id, s.customer_id,
               s.invoice_number, s.status, s.subtotal, s.discount_total,
-              s.tax_total, s.tax_rate, s.tax_mode, s.total, s.notes,
+              s.tax_total, s.tax_rate, s.tax_mode,
+              s.additional_rate, s.additional_total, s.total, s.notes,
               s.created_by, s.created_at,
               s.updated_at, c.name AS customer_name
        FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
@@ -343,7 +357,8 @@ export class SalesRepository {
     return executor.query(
       `SELECT s.id, s.branch_id, s.warehouse_id, s.customer_id,
               s.invoice_number, s.status, s.subtotal, s.discount_total,
-              s.tax_total, s.tax_rate, s.tax_mode, s.total, s.notes, s.created_at,
+              s.tax_total, s.tax_rate, s.tax_mode,
+              s.additional_rate, s.additional_total, s.total, s.notes, s.created_at,
               c.name AS customer_name
        FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
        WHERE s.branch_id = ?

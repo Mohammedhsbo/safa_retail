@@ -1,6 +1,15 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import type { TFunction } from 'i18next'
-import { Archive, ArrowRight, Building2, MapPin, Pencil, Warehouse as WarehouseIcon } from 'lucide-react'
+import {
+  Archive,
+  ArrowRight,
+  Building2,
+  Check,
+  MapPin,
+  Pencil,
+  Plus,
+  Warehouse as WarehouseIcon,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useRetailApplicationServices } from '../../app/RetailApplicationServices'
@@ -85,13 +94,22 @@ export function BranchSelectionScreen() {
           {branches.map((branch) => (
             <li key={branch.id}>
               <button
-                className="flex min-h-20 w-full items-center gap-3 rounded-2xl border border-[var(--border)] bg-white p-4 text-start hover:border-[var(--brand)]"
+                className="group flex min-h-28 w-full items-center gap-4 rounded-2xl border border-[var(--border)] bg-white p-4 text-start shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-[var(--brand-border)] hover:shadow-[var(--shadow-card)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)] sm:p-5"
                 onClick={() => select(branch)}
                 type="button"
               >
-                <span className="font-bold text-[var(--ink)]">{branch.name}</span>
-                <span className="ms-auto text-sm text-[var(--muted)]">{branch.code}</span>
-                <ArrowRight aria-hidden="true" className="text-[var(--brand)]" size={18} />
+                <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[var(--brand-wash)] text-[var(--brand)] transition-colors group-hover:bg-[var(--brand)] group-hover:text-white">
+                  <Building2 aria-hidden="true" size={22} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-base font-extrabold text-[var(--ink)]">{branch.name}</span>
+                  <span className="mt-2 inline-flex max-w-full items-center rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-xs font-bold tracking-wide text-[var(--muted)]">
+                    <span className="truncate">{branch.code}</span>
+                  </span>
+                </span>
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl text-[var(--brand)] transition group-hover:bg-[var(--brand-wash)]">
+                  <ArrowRight aria-hidden="true" className="rtl:rotate-180" size={19} />
+                </span>
               </button>
             </li>
           ))}
@@ -103,31 +121,41 @@ export function BranchSelectionScreen() {
         </p>
       )}
       {canCreateBranch && (
-        <form className="grid gap-3 border-t border-[var(--border)] pt-5" onSubmit={(event) => void create(event)}>
-          <h2 className="font-bold text-[var(--ink)]">{t('locations.addBranch')}</h2>
-          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
-            {t('locations.code')}
-            <input
-              className="min-h-11 rounded-xl border border-[var(--border)] px-3"
-              maxLength={32}
-              minLength={2}
-              onChange={(event) => setCode(event.target.value)}
-              required
-              value={code}
-            />
-          </label>
-          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
-            {t('locations.name')}
-            <input
-              className="min-h-11 rounded-xl border border-[var(--border)] px-3"
-              maxLength={120}
-              onChange={(event) => setName(event.target.value)}
-              required
-              value={name}
-            />
-          </label>
-          <Button disabled={busy} type="submit">{t('locations.createBranch')}</Button>
-        </form>
+        <Card as="article" className="overflow-hidden border-[var(--brand-border)]">
+          <form className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5" onSubmit={(event) => void create(event)}>
+            <div className="flex items-center gap-3 sm:col-span-2">
+              <span className="grid size-10 place-items-center rounded-xl bg-[var(--brand-wash)] text-[var(--brand)]">
+                <Plus aria-hidden="true" size={19} />
+              </span>
+              <h2 className="font-extrabold text-[var(--ink)]">{t('locations.addBranch')}</h2>
+            </div>
+            <label className="grid gap-1.5 text-sm font-semibold text-[var(--ink)]">
+              {t('locations.code')}
+              <input
+                className="min-h-11 rounded-xl border border-[var(--border)] bg-white px-3 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-wash)]"
+                maxLength={32}
+                minLength={2}
+                onChange={(event) => setCode(event.target.value)}
+                required
+                value={code}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[var(--ink)]">
+              {t('locations.name')}
+              <input
+                className="min-h-11 rounded-xl border border-[var(--border)] bg-white px-3 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-wash)]"
+                maxLength={120}
+                onChange={(event) => setName(event.target.value)}
+                required
+                value={name}
+              />
+            </label>
+            <Button className="sm:col-span-2 sm:justify-self-start" disabled={busy} type="submit">
+              <Check aria-hidden="true" size={17} />
+              {t('locations.createBranch')}
+            </Button>
+          </form>
+        </Card>
       )}
     </LocationSelectionLayout>
   )
@@ -145,10 +173,7 @@ export function WarehouseSelectionScreen() {
   const [branchName, setBranchName] = useState('')
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
-  const [warehouseType, setWarehouseType] = useState<Warehouse['warehouseType']>('fabrics')
-  const [address, setAddress] = useState('')
-  const [description, setDescription] = useState('')
-  const [status, setStatus] = useState<'active' | 'inactive'>('active')
+  const [warehouseType, setWarehouseType] = useState<NonNullable<Warehouse['warehouseType']>>('fabrics')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const canManage = Boolean(user?.permissions.includes('settings.manage'))
@@ -197,10 +222,7 @@ export function WarehouseSelectionScreen() {
         branchId,
         code,
         name,
-        warehouseType: warehouseType ?? 'fabrics',
-        address: address || null,
-        description: description || null,
-        status,
+        warehouseType,
       })
       const available = await organization.listAccessibleWarehouses(user.id, branchId)
       setWarehouses(available.filter((item) =>
@@ -228,23 +250,30 @@ export function WarehouseSelectionScreen() {
           {warehouses.map((warehouse) => (
             <li key={warehouse.id}>
               <button
-                className="flex min-h-20 w-full items-center gap-3 rounded-2xl border border-[var(--border)] bg-white p-4 text-start hover:border-[var(--brand)]"
+                className="group flex min-h-28 w-full items-center gap-4 rounded-2xl border border-[var(--border)] bg-white p-4 text-start shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-[var(--brand-border)] hover:shadow-[var(--shadow-card)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)] sm:p-5"
                 onClick={() => {
                   setWarehouse(warehouse.id)
                   navigate('/dashboard', { replace: true })
                 }}
                 type="button"
               >
-                <span className="min-w-0 text-start">
-                  <span className="block font-bold text-[var(--ink)]">{warehouse.name}</span>
-                  <span className="mt-1 block text-xs text-[var(--muted)]">
+                <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[var(--brand-wash)] text-[var(--brand)] transition-colors group-hover:bg-[var(--brand)] group-hover:text-white">
+                  <WarehouseIcon aria-hidden="true" size={22} />
+                </span>
+                <span className="min-w-0 flex-1 text-start">
+                  <span className="block truncate text-base font-extrabold text-[var(--ink)]">{warehouse.name}</span>
+                  <span className="mt-2 block truncate text-xs font-medium text-[var(--muted)]">
                     {warehouse.warehouseType
                       ? t(`locations.warehouseTypes.${warehouse.warehouseType}`)
                       : t('locations.warehouseTypes.unknown')}
                   </span>
                 </span>
-                <span className="ms-auto text-sm text-[var(--muted)]">{warehouse.code}</span>
-                <ArrowRight aria-hidden="true" className="text-[var(--brand)]" size={18} />
+                <span className="flex shrink-0 flex-col items-end gap-2">
+                  <span className="max-w-24 truncate rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-xs font-bold text-[var(--muted)]">
+                    {warehouse.code}
+                  </span>
+                  <ArrowRight aria-hidden="true" className="text-[var(--brand)] rtl:rotate-180" size={18} />
+                </span>
               </button>
             </li>
           ))}
@@ -256,74 +285,53 @@ export function WarehouseSelectionScreen() {
         </p>
       )}
       {canManage && branchId && (
-        <form className="grid gap-3 border-t border-[var(--border)] pt-5" onSubmit={(event) => void create(event)}>
-          <h2 className="font-bold text-[var(--ink)]">{t('locations.addWarehouse')}</h2>
-          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
-            {t('locations.code')}
-            <input
-              className="min-h-11 rounded-xl border border-[var(--border)] px-3"
-              maxLength={32}
-              minLength={2}
-              onChange={(event) => setCode(event.target.value)}
-              required
-              value={code}
-            />
-          </label>
-          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
-            {t('locations.name')}
-            <input
-              className="min-h-11 rounded-xl border border-[var(--border)] px-3"
-              maxLength={120}
-              onChange={(event) => setName(event.target.value)}
-              required
-              value={name}
-            />
-          </label>
-          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
-            {t('locations.warehouseType')}
-            <select
-              className="min-h-11 rounded-xl border border-[var(--border)] bg-white px-3"
-              onChange={(event) => setWarehouseType(event.target.value as NonNullable<Warehouse['warehouseType']>)}
-              required
-              value={warehouseType ?? ''}
-            >
-              <option value="clothing_manufacturing">{t('locations.warehouseTypes.clothing_manufacturing')}</option>
-              <option value="detergent_manufacturing">{t('locations.warehouseTypes.detergent_manufacturing')}</option>
-              <option value="fabrics">{t('locations.warehouseTypes.fabrics')}</option>
-            </select>
-          </label>
-          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
-            {t('locations.address')}
-            <input
-              className="min-h-11 rounded-xl border border-[var(--border)] px-3"
-              maxLength={500}
-              onChange={(event) => setAddress(event.target.value)}
-              value={address}
-            />
-          </label>
-          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
-            {t('locations.description')}
-            <textarea
-              className="min-h-20 rounded-xl border border-[var(--border)] p-3"
-              maxLength={1000}
-              onChange={(event) => setDescription(event.target.value)}
-              value={description}
-            />
-          </label>
-          <label className="grid gap-1 text-sm font-semibold text-[var(--ink)]">
-            {t('locations.statusLabel')}
-            <select
-              className="min-h-11 rounded-xl border border-[var(--border)] bg-white px-3"
-              onChange={(event) => setStatus(event.target.value as 'active' | 'inactive')}
-              required
-              value={status}
-            >
-              <option value="active">{t('locations.status.active')}</option>
-              <option value="inactive">{t('locations.status.inactive')}</option>
-            </select>
-          </label>
-          <Button disabled={busy} type="submit">{t('locations.createWarehouse')}</Button>
-        </form>
+        <Card as="article" className="overflow-hidden border-[var(--brand-border)]">
+          <form className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5" onSubmit={(event) => void create(event)}>
+            <div className="flex items-center gap-3 sm:col-span-2">
+              <span className="grid size-10 place-items-center rounded-xl bg-[var(--brand-wash)] text-[var(--brand)]">
+                <WarehouseIcon aria-hidden="true" size={19} />
+              </span>
+              <h2 className="font-extrabold text-[var(--ink)]">{t('locations.addWarehouse')}</h2>
+            </div>
+            <label className="grid gap-1.5 text-sm font-semibold text-[var(--ink)]">
+              {t('locations.code')}
+              <input
+                className="min-h-11 rounded-xl border border-[var(--border)] bg-white px-3 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-wash)]"
+                maxLength={32}
+                minLength={2}
+                onChange={(event) => setCode(event.target.value)}
+                required
+                value={code}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[var(--ink)]">
+              {t('locations.name')}
+              <input
+                className="min-h-11 rounded-xl border border-[var(--border)] bg-white px-3 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-wash)]"
+                maxLength={120}
+                onChange={(event) => setName(event.target.value)}
+                required
+                value={name}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[var(--ink)] sm:col-span-2">
+              {t('locations.warehouseType')}
+              <select
+                className="min-h-11 rounded-xl border border-[var(--border)] bg-white px-3 outline-none transition focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand-wash)]"
+                onChange={(event) => setWarehouseType(event.target.value as NonNullable<Warehouse['warehouseType']>)}
+                required
+                value={warehouseType}
+              >
+                <option value="clothing_manufacturing">{t('locations.warehouseTypes.clothing_manufacturing')}</option>
+                <option value="fabrics">{t('locations.warehouseTypes.fabrics')}</option>
+              </select>
+            </label>
+            <Button className="sm:col-span-2 sm:justify-self-start" disabled={busy} type="submit">
+              <Check aria-hidden="true" size={17} />
+              {t('locations.createWarehouse')}
+            </Button>
+          </form>
+        </Card>
       )}
     </LocationSelectionLayout>
   )
@@ -337,7 +345,7 @@ export function BranchesManagementScreen() {
   const { branchId: selectedBranchId, warehouseId: selectedWarehouseId, clearWorkspace } = useWorkspaceStore()
   const canManage = Boolean(user?.permissions.includes('settings.manage'))
   const [warehouseTypeFilter, setWarehouseTypeFilter] = useState<
-    'all' | 'clothing_manufacturing' | 'detergent_manufacturing' | 'fabrics' | 'unknown'
+    'all' | 'clothing_manufacturing' | 'fabrics' | 'unknown'
   >('all')
   const [branches, setBranches] = useState<Branch[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
@@ -462,7 +470,6 @@ export function BranchesManagementScreen() {
         >
           <option value="all">{t('locations.allWarehouseTypes')}</option>
           <option value="clothing_manufacturing">{t('locations.warehouseTypes.clothing_manufacturing')}</option>
-          <option value="detergent_manufacturing">{t('locations.warehouseTypes.detergent_manufacturing')}</option>
           <option value="fabrics">{t('locations.warehouseTypes.fabrics')}</option>
           <option value="unknown">{t('locations.warehouseTypes.unknown')}</option>
         </select>
@@ -735,7 +742,6 @@ function WarehouseEditForm({
           value={warehouseType}
         >
           <option value="clothing_manufacturing">{t('locations.warehouseTypes.clothing_manufacturing')}</option>
-          <option value="detergent_manufacturing">{t('locations.warehouseTypes.detergent_manufacturing')}</option>
           <option value="fabrics">{t('locations.warehouseTypes.fabrics')}</option>
         </select>
       </label>
@@ -828,6 +834,7 @@ function LocationSelectionLayout({
   const navigate = useNavigate()
   const { authentication } = useRetailApplicationServices()
   const [logoutError, setLogoutError] = useState('')
+  const activeStep = backTo ? 2 : 1
 
   const signOut = async (): Promise<void> => {
     useWorkspaceStore.getState().clearWorkspace()
@@ -843,46 +850,71 @@ function LocationSelectionLayout({
   }
 
   return (
-    <main className="relative grid min-h-screen place-items-center bg-[var(--surface)] p-4 pt-20 sm:p-8 sm:pt-24">
-      <div className="absolute end-4 top-4 sm:end-8 sm:top-8">
+    <main className="relative min-h-screen overflow-hidden bg-[var(--surface)] px-4 py-8 sm:px-8 sm:py-12">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-gradient-to-b from-[var(--brand-wash)]/80 to-transparent" />
+      <div className="absolute end-4 top-4 z-10 sm:end-8 sm:top-8">
         <LanguageSwitcher />
       </div>
-      <Card className="w-full max-w-2xl space-y-5 p-6 sm:p-8">
-        <header className="flex items-start gap-4">
-          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[var(--brand-wash)] text-[var(--brand)]">
-            {icon}
-          </span>
-          <div>
-            <h1 className="text-2xl font-black text-[var(--ink)]">{title}</h1>
-            <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
-          </div>
-        </header>
-        {(error || logoutError) && (
-          <>
-          <ToastError error={logoutError || error} />
-          <p className="rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">
-            {logoutError || error}
-          </p>
-          </>
-        )}
-        {children}
-        <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
-          {backTo && (
-            <Button
-              onClick={() => navigate(backTo)}
-              variant="secondary"
-            >
-              {t('locations.back')}
-            </Button>
-          )}
-          <Button
-            onClick={() => void signOut()}
-            variant="secondary"
-          >
-            {t('auth.signOut')}
-          </Button>
+      <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-5 pt-14 sm:pt-10">
+        <div aria-label={title} className="mx-auto flex w-full max-w-xl items-center px-4">
+          {[1, 2].map((step) => (
+            <div className="flex flex-1 items-center last:flex-none" key={step}>
+              <span className={`grid size-9 shrink-0 place-items-center rounded-full text-sm font-extrabold transition ${
+                step < activeStep
+                  ? 'bg-[var(--brand)] text-white'
+                  : step === activeStep
+                    ? 'bg-[var(--brand)] text-white ring-4 ring-[var(--brand-wash)]'
+                    : 'border border-[var(--border)] bg-white text-[var(--muted)]'
+              }`}>
+                {step < activeStep ? <Check aria-hidden="true" size={17} /> : step}
+              </span>
+              {step === 1 && (
+                <span className={`mx-3 h-0.5 flex-1 rounded-full ${activeStep === 2 ? 'bg-[var(--brand)]' : 'bg-[var(--border)]'}`} />
+              )}
+            </div>
+          ))}
         </div>
-      </Card>
+
+        <Card className="w-full overflow-hidden border-white/80 shadow-[0_24px_70px_-30px_rgba(16,44,33,0.3)]">
+          <header className="relative overflow-hidden bg-gradient-to-br from-[var(--brand)] to-[var(--brand-strong)] px-5 py-7 text-white sm:px-8 sm:py-9">
+            <div aria-hidden="true" className="absolute -end-10 -top-20 size-56 rounded-full border-[28px] border-white/5" />
+            <div className="relative flex items-center gap-4">
+              <span className="grid size-14 shrink-0 place-items-center rounded-2xl border border-white/20 bg-white/10 text-white shadow-inner">
+                {icon}
+              </span>
+              <div className="min-w-0">
+                <p className="mb-1 text-xs font-bold tracking-wide text-emerald-100">
+                  {activeStep} / 2
+                </p>
+                <h1 className="text-2xl font-black tracking-tight sm:text-3xl">{title}</h1>
+                <p className="mt-1 text-sm text-emerald-50/90">{description}</p>
+              </div>
+            </div>
+          </header>
+          <div className="space-y-6 p-4 sm:p-7">
+            {(error || logoutError) && (
+              <>
+                <ToastError error={logoutError || error} />
+                <p className="rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">
+                  {logoutError || error}
+                </p>
+              </>
+            )}
+            <div className="space-y-5">{children}</div>
+            <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+              {backTo && (
+                <Button onClick={() => navigate(backTo)} variant="secondary">
+                  <ArrowRight aria-hidden="true" className="ltr:rotate-180" size={16} />
+                  {t('locations.back')}
+                </Button>
+              )}
+              <Button className="ms-auto" onClick={() => void signOut()} variant="secondary">
+                {t('auth.signOut')}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </div>
     </main>
   )
 }

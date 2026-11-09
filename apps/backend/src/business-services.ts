@@ -45,6 +45,7 @@ export const exposedBusinessOperations = {
     'initializeStandardUnits', 'createUnit', 'updateUnit', 'archiveUnit',
     'listProducts', 'getProduct', 'getProductByBarcode', 'createProduct',
     'updateProduct', 'setProductStatus', 'archiveProduct',
+    'listProductsNotInWarehouse', 'assignProductToWarehouse',
   ],
   inventory: [
     'adjustStock', 'getBalance', 'listBalances', 'listMovements',

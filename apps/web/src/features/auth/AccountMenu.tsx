@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, LogOut, ShieldCheck, UserRound } from 'lucide-react'
+import { ChevronDown, LogOut, MapPin, ShieldCheck, UserRound } from 'lucide-react'
 import type { AuthenticatedUser } from '@safa/types'
+import { isGlobalBranchAdmin } from './auth.types'
 
 type AccountMenuProps = {
   user: AuthenticatedUser
@@ -15,6 +16,7 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const canEditProfile = user.permissions.includes('users.manage')
+  const canChangeLocation = isGlobalBranchAdmin(user.roleCodes)
 
   useEffect(() => {
     if (!menuOpen) return
@@ -37,6 +39,11 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
   const openProfile = (): void => {
     setMenuOpen(false)
     navigate('/profile')
+  }
+
+  const changeBranch = (): void => {
+    setMenuOpen(false)
+    navigate('/branch-selection')
   }
 
   const signOut = async (): Promise<void> => {
@@ -89,6 +96,17 @@ export function AccountMenu({ user, onLogout }: AccountMenuProps) {
             <UserRound aria-hidden="true" className="text-[var(--brand)]" size={18} />
             <span>{t('accountMenu.profile')}</span>
           </button>
+          {canChangeLocation && (
+            <button
+              className="flex min-h-12 w-full items-center gap-3 rounded-2xl px-3 text-start text-sm font-semibold text-[var(--ink)] transition hover:bg-[var(--surface)]"
+              onClick={changeBranch}
+              role="menuitem"
+              type="button"
+            >
+              <MapPin aria-hidden="true" className="text-[var(--brand)]" size={18} />
+              <span>{t('navigation.changeLocation')}</span>
+            </button>
+          )}
           <div className="my-1 border-t border-[var(--border)]" />
           <button
             className="flex min-h-12 w-full items-center gap-3 rounded-2xl px-3 text-start text-sm font-bold text-red-700 transition hover:bg-red-50"

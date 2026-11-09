@@ -49,7 +49,6 @@ model branches {
   user_branch_access                                       user_branch_access[]
   warehouses                                               warehouses[]
   product_branch_availability                              product_branch_availability[]
-  product_warehouse_availability                           product_warehouse_availability[]
 }
 
 model brands {
@@ -395,7 +394,6 @@ model products {
   product_unit_conversions product_unit_conversions[]
   production_outputs       production_outputs[]
   product_branch_availability product_branch_availability[]
-  product_warehouse_availability product_warehouse_availability[]
   measurement_units        measurement_units          @relation(fields: [base_unit_id], references: [id], onUpdate: NoAction)
   brands                   brands?                    @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   categories               categories?                @relation(fields: [category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -420,9 +418,26 @@ model product_branch_availability {
   updated_at     String
   branches       branches @relation(fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   products       products @relation(fields: [product_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  product_warehouse_availability product_warehouse_availability[]
 
   @@id([product_id, branch_id])
   @@index([branch_id, status, product_id], map: "idx_product_branch_availability_branch")
+}
+
+model product_warehouse_availability {
+  product_id    String
+  branch_id     String
+  warehouse_id  String
+  purchase_price String
+  selling_price  String
+  minimum_stock  String   @default("0")
+  status         String
+  created_at     String
+  updated_at     String
+  product_branch_availability product_branch_availability @relation(fields: [product_id, branch_id], references: [product_id, branch_id], onDelete: Restrict, onUpdate: NoAction)
+  warehouses    warehouses @relation(fields: [warehouse_id, branch_id], references: [id, branch_id], onDelete: Restrict, onUpdate: NoAction)
+  @@id([product_id, warehouse_id])
+  @@index([warehouse_id, status, product_id], map: "idx_product_warehouse_availability_warehouse")
 }
 
 model purchase_items {
@@ -595,6 +610,8 @@ model sales {
   updated_at                                          String
   tax_rate                                            String          @default("0")
   tax_mode                                            String          @default("exclusive")
+  additional_rate                                     String          @default("0")
+  additional_total                                    String          @default("0")
   sale_items                                          sale_items[]
   sale_payments                                       sale_payments[]
   warehouses_sales_warehouse_id_branch_idTowarehouses warehouses      @relation("sales_warehouse_id_branch_idTowarehouses", fields: [warehouse_id, branch_id], references: [id, branch_id], onUpdate: NoAction)
@@ -790,7 +807,6 @@ model users {
   manufacturing_orders_manufacturing_orders_approved_byTousers manufacturing_orders[]  @relation("manufacturing_orders_approved_byTousers")
   manufacturing_orders_manufacturing_orders_created_byTousers  manufacturing_orders[]  @relation("manufacturing_orders_created_byTousers")
   production_outputs                                           production_outputs[]
-  product_warehouse_availability product_warehouse_availability[]
   purchase_payments                                            purchase_payments[]
   purchase_returns                                             purchase_returns[]
   purchases                                                    purchases[]
@@ -846,6 +862,7 @@ model warehouses {
   stock_transfers_stock_transfers_to_warehouse_idTowarehouses                  stock_transfers[]       @relation("stock_transfers_to_warehouse_idTowarehouses")
   stock_transfers_stock_transfers_from_warehouse_idTowarehouses                stock_transfers[]       @relation("stock_transfers_from_warehouse_idTowarehouses")
   user_warehouse_access                                                        user_warehouse_access[]
+  product_warehouse_availability                                               product_warehouse_availability[]
   branches                                                                     branches                @relation(fields: [branch_id], references: [id], onUpdate: NoAction)
 
   @@unique([id, branch_id], map: "sqlite_autoindex_warehouses_3")

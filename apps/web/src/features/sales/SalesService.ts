@@ -34,6 +34,7 @@ const saleInputSchema = z.object({
     method: z.enum(['cash', 'card', 'bank_transfer', 'mobile', 'other']),
     reference: z.string().trim().max(200).nullable().optional(),
   })).max(50).default([]),
+  additionalRate: decimalSchema.default('0'),
 })
 const taxInputSchema = z.object({
   branchId: uuidSchema,
@@ -103,6 +104,8 @@ export type Sale = {
   taxTotal: string
   taxRate: string
   taxMode: 'exclusive' | 'inclusive'
+  additionalRate: string
+  additionalTotal: string
   total: string
   amountPaid: string
   amountRefunded: string
@@ -296,7 +299,11 @@ export class SalesService {
 
   async createSale(actorId: string, input: unknown): Promise<string> {
     const parsed = saleInputSchema.safeParse(input)
-    if (!parsed.success) {
+    if (
+      !parsed.success ||
+      parseDecimal(parsed.data.additionalRate, 'Additional rate') >
+        parseDecimal('100', 'Maximum additional rate')
+    ) {
       throw new SalesError('The sale details are invalid')
     }
     if (
@@ -316,6 +323,9 @@ export class SalesService {
         transaction,
       )
       const customerId = parsed.data.customerId ?? null
+      if (!customerId && parseDecimal(parsed.data.additionalRate, 'Additional rate') > 0n) {
+        throw new SalesError('An additional rate requires a selected customer')
+      }
       if (customerId && !(await this.repository.getCustomer(customerId, transaction))) {
         throw new SalesError('The selected customer does not exist or is inactive')
       }
@@ -329,19 +339,13 @@ export class SalesService {
       let taxTotal = 0n
       let total = 0n
       for (const item of parsed.data.items) {
-        const product = await this.repository.getProduct(item.productId, transaction)
-        if (!product || product.status !== 'active') {
-          throw new SalesError('A selected product does not exist or is inactive')
-        }
-        const [availability] = await transaction.query<{ is_available: number }>(
-          `SELECT EXISTS (
-             SELECT 1 FROM product_branch_availability
-             WHERE product_id = ? AND branch_id = ? AND status = 'active'
-           ) AS is_available`,
-          [item.productId, location.branchId],
+        const product = await this.repository.getProduct(
+          item.productId,
+          parsed.data.warehouseId,
+          transaction,
         )
-        if (availability?.is_available !== 1) {
-          throw new SalesError('The selected product is not available in this branch')
+        if (!product || product.status !== 'active') {
+          throw new SalesError('The selected product is not active in this warehouse')
         }
         const unit = await this.repository.getUnit(
           item.productId,
@@ -422,6 +426,29 @@ export class SalesService {
         taxTotal += lineTax
         total += lineTotal
       }
+      const additionalRate = parseDecimal(parsed.data.additionalRate, 'Additional rate')
+      const netSubtotal = subtotal - discountTotal
+      const additionalTotal = divideDecimal(
+        multiplyDecimal(netSubtotal, additionalRate),
+        parseDecimal('100', 'Percentage base'),
+      )
+      let additionalTax = 0n
+      if (taxSetting.taxMode === 'inclusive') {
+        additionalTax = divideDecimal(
+          multiplyDecimal(additionalTotal, parseDecimal(taxSetting.taxRate, 'Tax rate')),
+          parseDecimal('100', 'Percentage base') +
+            parseDecimal(taxSetting.taxRate, 'Tax rate'),
+        )
+      } else {
+        additionalTax = divideDecimal(
+          multiplyDecimal(additionalTotal, parseDecimal(taxSetting.taxRate, 'Tax rate')),
+          parseDecimal('100', 'Percentage base'),
+        )
+      }
+      taxTotal += additionalTax
+      total += taxSetting.taxMode === 'inclusive'
+        ? additionalTotal
+        : additionalTotal + additionalTax
       const paymentTotal = parsed.data.payments.reduce(
         (sum, payment) => sum + parseDecimal(payment.amount, 'Payment amount'),
         0n,
@@ -445,6 +472,8 @@ export class SalesService {
         taxTotal: formatDecimal(taxTotal),
         taxRate: taxSetting.taxRate,
         taxMode: taxSetting.taxMode,
+        additionalRate: parsed.data.additionalRate,
+        additionalTotal: formatDecimal(additionalTotal),
         total: formatDecimal(total),
         notes: parsed.data.notes ?? null,
         actorId,
@@ -506,6 +535,8 @@ export class SalesService {
           taxTotal: formatDecimal(taxTotal),
           taxRate: taxSetting.taxRate,
           taxMode: taxSetting.taxMode,
+          additionalRate: parsed.data.additionalRate,
+          additionalTotal: formatDecimal(additionalTotal),
           total: formatDecimal(total),
           paymentTotal: formatDecimal(paymentTotal),
           itemCount: calculated.length,
@@ -649,6 +680,29 @@ export class SalesService {
         refundAmount: bigint
       }> = []
       let returnTotal = 0n
+      const allSaleItems = await this.repository.getSaleItems(saleId, transaction)
+      const itemsValue = allSaleItems.reduce(
+        (sum, item) => sum + parseDecimal(this.rowString(item.line_total), 'Sale line total'),
+        0n,
+      )
+      const saleValue = parseDecimal(this.rowString(sale.total), 'Sale total')
+      const additionalValue = saleValue - itemsValue
+      if (additionalValue < 0n || (itemsValue === 0n && additionalValue > 0n)) {
+        throw new SalesError('The sale total cannot be allocated across its items')
+      }
+      const additionalByItem = new Map<string, bigint>()
+      let allocatedAdditional = 0n
+      allSaleItems.forEach((item, index) => {
+        const itemId = this.rowString(item.id)
+        const itemValue = parseDecimal(this.rowString(item.line_total), 'Sale line total')
+        const share = itemsValue === 0n
+          ? 0n
+          : index === allSaleItems.length - 1
+            ? additionalValue - allocatedAdditional
+            : divideDecimal(multiplyDecimal(additionalValue, itemValue), itemsValue)
+        additionalByItem.set(itemId, share)
+        allocatedAdditional += share
+      })
       for (const inputItem of parsed.data.items) {
         const saleItem = await this.repository.getSaleItem(inputItem.saleItemId, transaction)
         if (!saleItem || saleItem.sale_id !== saleId) {
@@ -674,7 +728,9 @@ export class SalesService {
           (sum, row) => sum + parseDecimal(this.rowString(row.refund_amount), 'Previously refunded value'),
           0n,
         )
-        const itemTotal = parseDecimal(this.rowString(saleItem.line_total), 'Sale line total')
+        const itemTotal =
+          parseDecimal(this.rowString(saleItem.line_total), 'Sale line total') +
+          (additionalByItem.get(inputItem.saleItemId) ?? 0n)
         const refundAmount =
           previouslyReturned + returnQuantity === originalQuantity
             ? itemTotal - alreadyRefunded
@@ -859,6 +915,8 @@ export class SalesService {
       taxTotal: this.rowString(row.tax_total),
       taxRate: this.rowString(row.tax_rate),
       taxMode: this.rowTaxMode(row.tax_mode),
+      additionalRate: this.rowString(row.additional_rate),
+      additionalTotal: this.rowString(row.additional_total),
       total: this.rowString(row.total),
       amountPaid: formatDecimal(amountPaid),
       amountRefunded: formatDecimal(amountRefunded),

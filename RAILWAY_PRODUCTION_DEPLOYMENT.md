@@ -9,14 +9,23 @@
 - API URL: <https://api-production-d678.up.railway.app>
 - Health check: `GET /api/v1/health`
 
-The API service uses the repository root as its source root. The backend package
-is under `apps/backend`, but the root contains the pnpm workspace and lockfile
-required by the build and start commands.
+The API service uses the repository root as its Docker build context. The
+backend package is under `apps/backend`; the root pnpm workspace and lockfile
+are required by the build.
 
-The Railway configuration is maintained in `.railway/railway.ts`. It builds
-with `pnpm install --frozen-lockfile && pnpm --filter @safa/backend build` and
-starts with `pnpm --filter @safa/backend db:migrate:deploy && pnpm --filter
-@safa/backend start`.
+The Railway configuration is maintained in `.railway/railway.ts` and uses
+`.railway/backend.Dockerfile`. The Docker build pins Node 22 and pnpm 10.12.1,
+installs only `@safa/backend` and its workspace dependencies using the root
+lockfile, and compiles the backend. The backend also imports domain source from
+`apps/web/src`, so that source is copied into the build without installing the
+web app's frontend dependencies. A separate runtime image contains only
+production dependencies, the compiled API, and Prisma's generated client,
+schema, and migrations. Railway starts the compiled API with
+`node apps/backend/dist/server.js`. Database migrations are not run during
+image build or automatically at service startup.
+
+The local development container continues to use `docker/dev.Dockerfile` via
+`docker-compose.yml`; the Railway Dockerfile does not change that workflow.
 
 ## Production variables
 
@@ -72,14 +81,33 @@ key must be configured before publishing a release APK.
 
 ## Updating the API
 
-From the repository root, preview/apply service configuration with:
+From the repository root, commit/push the Railway configuration, Dockerfile,
+workspace manifests, lockfile, backend, and required `apps/web/src` source. The
+Railway service should use the root as its source directory and
+`.railway/backend.Dockerfile` as its Dockerfile. Preview the infrastructure
+change first:
 
 ```powershell
 railway config plan --environment production
-railway config apply --environment production --yes
-railway up --service api --environment production --project <project-id>
 ```
 
-Keep the API source root at the repository root so pnpm workspace commands and
-the lockfile remain available. Never put production secrets in source files or
-deployment logs.
+Apply only after confirming the plan changes the `api` service's builder,
+Dockerfile path, and start command, and does not change PostgreSQL or
+environment variables:
+
+```powershell
+railway config apply --environment production --yes
+```
+
+Then deploy the API source:
+
+```powershell
+railway up --service api --environment production --project prolific-smile
+```
+
+Before deploying, confirm the `api` service is the target and review Railway's
+build and runtime logs. Apply any required Prisma migration as a separate,
+explicit maintenance action after a backup and migration review; never add a
+migration command to the image build or service start. Check
+`GET /api/v1/health` after deployment. Never put production secrets in source
+files or deployment logs.

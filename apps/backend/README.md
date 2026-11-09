@@ -15,7 +15,15 @@ The API includes health checks, first-owner setup, sign-in, cookie-backed refres
 
 ### Railway
 
-The root `railway.json` builds the backend, applies Prisma migrations before startup, and uses `/api/v1/health` as its health check. Deploy from the repository root and provision Railway PostgreSQL. Set:
+The root Railway service configuration is in `.railway/railway.ts`; it builds
+with `.railway/backend.Dockerfile` and uses `/api/v1/health` as its health
+check. The Dockerfile uses the root pnpm workspace and lockfile but installs
+only backend dependencies for its build and production runtime dependencies in
+the final image. It includes the shared domain source from `apps/web/src`
+without installing frontend dependencies. Database migrations must be reviewed
+and applied separately; they are not run during image build or service startup.
+The compiled server starts with `node apps/backend/dist/server.js`. Deploy from
+the repository root and provision Railway PostgreSQL. Set:
 
 - `NODE_ENV=production`
 - `DATABASE_URL` to Railway PostgreSQL's `DATABASE_URL` reference

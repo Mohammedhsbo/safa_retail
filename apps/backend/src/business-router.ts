@@ -14,6 +14,8 @@ const branchScopedCatalogOperations = new Set([
   'updateProduct',
   'setProductStatus',
   'archiveProduct',
+  'listProductsNotInWarehouse',
+  'assignProductToWarehouse',
 ])
 
 const workspaceRequiredDomains = new Set([
@@ -131,6 +133,7 @@ export function createBusinessRouter(authentication: AuthenticationService) {
         principal.id,
         ...args.slice(1),
         ...(branchScopedProductOperation && branchId ? [branchId] : []),
+        ...(branchScopedProductOperation && warehouseId ? [warehouseId] : []),
       ])
       response.json({
         data: result instanceof Uint8Array

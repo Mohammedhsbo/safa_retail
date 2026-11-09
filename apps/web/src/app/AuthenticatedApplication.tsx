@@ -57,6 +57,7 @@ import { AccountMenu } from '../features/auth/AccountMenu'
 import { AccountProfileScreen } from '../features/auth/AccountProfileScreen'
 import { useWorkspaceStore } from '../shared/state/workspace-store'
 import { ToastError } from '../shared/components/ToastError'
+import { isGlobalBranchAdmin } from '../features/auth/auth.types'
 
 export function AuthenticatedApplication({
   initialSetupRequired,
@@ -103,19 +104,33 @@ export function AuthenticatedApplication({
     )
   }
 
+  const isGlobalAdmin = isGlobalBranchAdmin(user.roleCodes)
+
   return (
     <Routes>
       <Route path="/login" element={<Navigate replace to="/branch-selection" />} />
-      <Route path="/branch-selection" element={<BranchSelectionScreen />} />
+      <Route
+        path="/branch-selection"
+        element={isGlobalAdmin || !branchId
+          ? <BranchSelectionScreen />
+          : <Navigate replace to={warehouseId ? '/dashboard' : '/warehouse-selection'} />}
+      />
       <Route
         path="/warehouse-selection"
         element={branchId
-          ? <WarehouseSelectionScreen />
+          ? isGlobalAdmin || !warehouseId
+            ? <WarehouseSelectionScreen />
+            : <Navigate replace to="/dashboard" />
           : <Navigate replace to="/branch-selection" />}
       />
       <Route element={<WorkspaceGuard branchId={branchId} warehouseId={warehouseId} />}>
         <Route element={<AuthenticatedLayout />}>
-          <Route path="/branches" element={<BranchesManagementScreen />} />
+          <Route
+            path="/branches"
+            element={isGlobalAdmin
+              ? <BranchesManagementScreen />
+              : <Navigate replace to="/dashboard" />}
+          />
           <Route path="/" element={<Navigate replace to="/dashboard" />} />
           <Route path="/profile" element={<AccountProfileScreen user={user} />} />
           <Route path="/dashboard" element={<DashboardScreen />} />
@@ -173,10 +188,12 @@ export function AuthenticatedApplication({
             </>
           )}
           {user.permissions.includes('manufacturing.manage') && (
-            <>
+            <Route
+              element={<ManufacturingWarehouseGuard branchId={branchId} warehouseId={warehouseId} />}
+            >
               <Route path="/manufacturing" element={<ManufacturingOrdersScreen />} />
               <Route path="/manufacturing/:orderId" element={<ManufacturingDetailsScreen />} />
-            </>
+            </Route>
           )}
           {user.permissions.includes('sales.create') && (
             <Route
@@ -328,21 +345,88 @@ function WorkspaceGuard({
   return <Outlet />
 }
 
+function ManufacturingWarehouseGuard({
+  branchId,
+  warehouseId,
+}: {
+  branchId: string | null
+  warehouseId: string | null
+}) {
+  const { t } = useTranslation()
+  const { organization } = useRetailApplicationServices()
+  const user = useSessionStore((state) => state.user)
+  const [validation, setValidation] = useState<{
+    key: string
+    status: 'allowed' | 'blocked' | 'error'
+    message?: string
+  } | null>(null)
+  const key = `${user?.id ?? ''}:${branchId ?? ''}:${warehouseId ?? ''}`
+
+  useEffect(() => {
+    if (!user || !branchId || !warehouseId) return
+    let active = true
+    void organization.listAccessibleWarehouses(user.id, branchId).then((warehouses) => {
+      if (!active) return
+      const selectedWarehouse = warehouses.find((warehouse) =>
+        warehouse.id === warehouseId &&
+        warehouse.branchId === branchId &&
+        warehouse.status === 'active',
+      )
+      setValidation({
+        key,
+        status: selectedWarehouse?.warehouseType === 'clothing_manufacturing'
+          ? 'allowed'
+          : 'blocked',
+      })
+    }).catch((error: unknown) => {
+      if (active) {
+        setValidation({
+          key,
+          status: 'error',
+          message: error instanceof Error ? error.message : t('manufacturing.loadFailed'),
+        })
+      }
+    })
+    return () => { active = false }
+  }, [branchId, key, organization, t, user, warehouseId])
+
+  if (!branchId || !warehouseId) return <Navigate replace to="/branch-selection" />
+  if (!user) return <Navigate replace to="/login" />
+  if (validation?.key !== key) {
+    return <main className="p-6 text-center text-sm text-[var(--muted)]" role="status">
+      {t('locations.validating')}
+    </main>
+  }
+  if (validation.status === 'blocked') return <Navigate replace to="/dashboard" />
+  if (validation.status === 'error') {
+    return <main className="mx-auto max-w-xl p-6">
+      <ToastError error={validation.message ?? ''} />
+      <p className="rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">
+        {validation.message}
+      </p>
+    </main>
+  }
+  return <Outlet />
+}
+
 function AuthenticatedLayout() {
   const { t, i18n } = useTranslation()
   const { authentication, organization } = useRetailApplicationServices()
   const user = useSessionStore((state) => state.user)
   const clearWorkspace = useWorkspaceStore((state) => state.clearWorkspace)
   const { branchId, warehouseId } = useWorkspaceStore()
+  const isGlobalAdmin = isGlobalBranchAdmin(user?.roleCodes ?? [])
   const [logoutError, setLogoutError] = useState('')
   const [workspaceLabel, setWorkspaceLabel] = useState('')
   const [workspaceError, setWorkspaceError] = useState('')
+  const [selectedWarehouseType, setSelectedWarehouseType] = useState<string | null>(null)
   useEffect(() => {
     let active = true
     const loadLabel = async (): Promise<void> => {
       if (!user || !branchId) {
         setWorkspaceLabel('')
         setWorkspaceError('')
+        setSelectedWarehouseType(null)
         return
       }
       try {
@@ -352,12 +436,15 @@ function AuthenticatedLayout() {
         ])
         if (!active) return
         const branchName = branches.find((branch) => branch.id === branchId)?.name
-        const warehouseName = warehouses.find((warehouse) => warehouse.id === warehouseId)?.name
+        const selectedWarehouse = warehouses.find((warehouse) => warehouse.id === warehouseId)
+        const warehouseName = selectedWarehouse?.name
         setWorkspaceLabel([branchName, warehouseName].filter(Boolean).join(' · '))
+        setSelectedWarehouseType(selectedWarehouse?.warehouseType ?? null)
         setWorkspaceError('')
       } catch (error) {
         if (active) {
           setWorkspaceError(error instanceof Error ? error.message : t('locations.loadFailed'))
+          setSelectedWarehouseType(null)
         }
       }
     }
@@ -368,7 +455,7 @@ function AuthenticatedLayout() {
 
   const navigation = [
     { path: '/dashboard', label: t('navigation.dashboard'), permission: null },
-    { path: '/branches', label: t('navigation.branches'), permission: null },
+    { path: '/branches', label: t('navigation.branches'), permission: null, adminOnly: true },
     { path: '/products', label: t('navigation.products'), permission: 'products.read' },
     { path: '/pos', label: t('navigation.pos'), permission: 'sales.create' },
     { path: '/sales', label: t('navigation.salesHistory'), permission: 'sales.read' },
@@ -379,7 +466,9 @@ function AuthenticatedLayout() {
     { path: '/purchases', label: t('navigation.purchases'), permission: 'purchases.read' },
     { path: '/inventory', label: t('navigation.inventory'), permission: 'inventory.read' },
     { path: '/inventory/transfers', label: t('navigation.transfers'), permission: 'inventory.transfer' },
-    { path: '/manufacturing', label: t('navigation.manufacturing'), permission: 'manufacturing.manage' },
+    ...(selectedWarehouseType === 'clothing_manufacturing'
+      ? [{ path: '/manufacturing', label: t('navigation.manufacturing'), permission: 'manufacturing.manage' }]
+      : []),
     { path: '/users', label: t('navigation.users'), permission: 'users.manage' },
     { path: '/roles', label: t('navigation.roles'), permission: 'roles.manage' },
     { path: '/settings', label: t('navigation.settings'), permission: 'settings.manage' },
@@ -387,9 +476,12 @@ function AuthenticatedLayout() {
     { path: '/reports', label: t('navigation.reports'), permission: 'reports.read' },
     { path: '/settings/backup', label: t('navigation.backup'), permission: 'settings.manage' },
   ].filter((item) =>
-    item.permission === null ||
-    user.permissions.includes(item.permission) ||
-    (item.path === '/purchases' && user.permissions.includes('purchases.create')),
+    (!item.adminOnly || isGlobalAdmin) &&
+    (
+      item.permission === null ||
+      user.permissions.includes(item.permission) ||
+      (item.path === '/purchases' && user.permissions.includes('purchases.create'))
+    ),
   )
 
   const logout = async (): Promise<void> => {

@@ -18,6 +18,7 @@ export function InventoryScreen() {
   const { t } = useTranslation()
   const services = useRetailApplicationServices()
   const user = useSessionStore((state) => state.user)
+  const branchId = useWorkspaceStore((state) => state.branchId)
   const warehouseId = useWorkspaceStore((state) => state.warehouseId)
   const canAdjust = Boolean(user?.permissions.includes('inventory.adjust'))
   const [balances, setBalances] = useState<InventoryBalance[]>([])
@@ -32,16 +33,16 @@ export function InventoryScreen() {
   const [error, setError] = useState('')
 
   const load = useCallback(async (): Promise<void> => {
-    if (!user || !warehouseId) return
+    if (!user || !branchId || !warehouseId) return
     const [availableBalances, availableProducts] = await Promise.all([
       services.inventory.listBalances(user.id, warehouseId),
       user.permissions.includes('products.read')
-        ? services.catalog.listProducts(user.id)
+        ? services.catalog.listProducts(user.id, branchId, warehouseId)
         : Promise.resolve([]),
     ])
     setBalances(availableBalances)
     setProducts(availableProducts.filter((item) => item.status === 'active'))
-  }, [services, user, warehouseId])
+  }, [branchId, services, user, warehouseId])
   useEffect(() => {
     let active = true
     void Promise.resolve().then(load).catch((loadError: unknown) => {
@@ -116,11 +117,11 @@ export function InventoryScreen() {
               </label>
             )}
             <label className="grid gap-1 text-sm font-semibold">{t('inventory.quantity')}
-              <input className={fieldClass} inputMode="decimal" min="0.000000001" onChange={(event) => setQuantity(event.target.value)} required value={quantity} />
+              <input className={fieldClass} min="0.000000001" onChange={(event) => setQuantity(event.target.value)} required step="any" type="number" value={quantity} />
             </label>
             {direction === 'in' && (
               <label className="grid gap-1 text-sm font-semibold">{t('inventory.unitCost')}
-                <input className={fieldClass} inputMode="decimal" min="0" onChange={(event) => setUnitCost(event.target.value)} required value={unitCost} />
+                <input className={fieldClass} min="0" onChange={(event) => setUnitCost(event.target.value)} required step="any" type="number" value={unitCost} />
               </label>
             )}
             <label className="grid gap-1 text-sm font-semibold sm:col-span-2">{t('inventory.reason')}
@@ -215,6 +216,7 @@ export function StocktakingScreen() {
   const { countId } = useParams()
   const services = useRetailApplicationServices()
   const user = useSessionStore((state) => state.user)
+  const branchId = useWorkspaceStore((state) => state.branchId)
   const warehouseId = useWorkspaceStore((state) => state.warehouseId)
   const canCount = Boolean(user?.permissions.includes('inventory.count'))
   const [products, setProducts] = useState<CatalogProduct[]>([])
@@ -226,14 +228,16 @@ export function StocktakingScreen() {
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async (): Promise<void> => {
-    if (!user || !warehouseId) return
+    if (!user || !branchId || !warehouseId) return
     const [availableCounts, availableProducts] = await Promise.all([
       services.inventory.listStockCounts(user.id, warehouseId),
-      user.permissions.includes('products.read') ? services.catalog.listProducts(user.id) : Promise.resolve([]),
+      user.permissions.includes('products.read')
+        ? services.catalog.listProducts(user.id, branchId, warehouseId)
+        : Promise.resolve([]),
     ])
     setCounts(availableCounts)
     setProducts(availableProducts.filter((item) => item.status === 'active'))
-  }, [services, user, warehouseId])
+  }, [branchId, services, user, warehouseId])
 
   useEffect(() => {
     let active = true
@@ -339,7 +343,7 @@ export function StocktakingScreen() {
                       countedQuantity: quantities[item.productId] ?? item.countedQuantity ?? '',
                     }))
                   }}>
-                    <input aria-label={t('inventory.countedQuantity')} className={fieldClass} inputMode="decimal" min="0" onChange={(event) => setQuantities({ ...quantities, [item.productId]: event.target.value })} required value={quantities[item.productId] ?? item.countedQuantity ?? ''} />
+                    <input aria-label={t('inventory.countedQuantity')} className={fieldClass} min="0" onChange={(event) => setQuantities({ ...quantities, [item.productId]: event.target.value })} required step="any" type="number" value={quantities[item.productId] ?? item.countedQuantity ?? ''} />
                     <Button type="submit">{t('inventory.recordCount')}</Button>
                   </form>
                 ) : <span>{item.countedQuantity ?? '—'}</span>}
@@ -364,6 +368,7 @@ export function StockTransfersScreen() {
   const { transferId } = useParams()
   const services = useRetailApplicationServices()
   const user = useSessionStore((state) => state.user)
+  const branchId = useWorkspaceStore((state) => state.branchId)
   const sourceWarehouseId = useWorkspaceStore((state) => state.warehouseId)
   const [transfers, setTransfers] = useState<StockTransfer[]>([])
   const [transfer, setTransfer] = useState<StockTransfer | null>(null)
@@ -377,11 +382,13 @@ export function StockTransfersScreen() {
   const canTransfer = Boolean(user?.permissions.includes('inventory.transfer'))
 
   const load = useCallback(async (): Promise<void> => {
-    if (!user || !sourceWarehouseId || !canTransfer) return
+    if (!user || !branchId || !sourceWarehouseId || !canTransfer) return
     const [availableTransfers, availableBranches, availableProducts] = await Promise.all([
       services.inventory.listTransfers(user.id, sourceWarehouseId),
       services.organization.listAccessibleBranches(user.id),
-      user.permissions.includes('products.read') ? services.catalog.listProducts(user.id) : Promise.resolve([]),
+      user.permissions.includes('products.read')
+        ? services.catalog.listProducts(user.id, branchId, sourceWarehouseId)
+        : Promise.resolve([]),
     ])
     const accessibleWarehouses = await Promise.all(
       availableBranches.map((branch) =>
@@ -395,7 +402,7 @@ export function StockTransfersScreen() {
       branchId: warehouse.branchId,
     })).filter((warehouse) => warehouse.id !== sourceWarehouseId))
     setProducts(availableProducts.filter((product) => product.status === 'active'))
-  }, [canTransfer, services, sourceWarehouseId, user])
+  }, [branchId, canTransfer, services, sourceWarehouseId, user])
 
   useEffect(() => {
     let active = true
@@ -486,11 +493,11 @@ export function StockTransfersScreen() {
                       <option value="">{t('inventory.chooseProduct')}</option>
                       {products.filter((product) => product.id === item.productId || !items.some((other, otherIndex) => otherIndex !== index && other.productId === product.id)).map((product) => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}
                     </select>
-                    <input aria-label={t('inventory.quantity')} className={fieldClass} inputMode="decimal" min="0.000000001" onChange={(event) => {
+                    <input aria-label={t('inventory.quantity')} className={fieldClass} min="0.000000001" onChange={(event) => {
                       const next = [...items]
                       next[index] = { ...item, quantity: event.target.value }
                       setItems(next)
-                    }} required value={item.quantity} />
+                    }} required step="any" type="number" value={item.quantity} />
                     <Button disabled={items.length === 1} onClick={() => setItems(items.filter((_, itemIndex) => itemIndex !== index))} type="button" variant="secondary">{t('inventory.removeItem')}</Button>
                   </div>
                 ))}

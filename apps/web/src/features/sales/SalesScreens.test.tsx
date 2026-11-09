@@ -42,6 +42,8 @@ const sale: Sale = {
   taxTotal: '0',
   taxRate: '0',
   taxMode: 'exclusive',
+  additionalRate: '0',
+  additionalTotal: '0',
   total: '20',
   amountPaid: '20',
   amountRefunded: '0',
@@ -140,9 +142,10 @@ describe('sales history, invoice and returns screens', () => {
     renderScreen('/sales/returns?sale=sale-id', <SalesReturnsScreen />)
 
     await userEventApi.type(await screen.findByRole('textbox', { name: 'Reason for return' }), 'Damaged')
-    await userEventApi.type(screen.getByRole('spinbutton'), '1')
-    await userEventApi.clear(screen.getByRole('textbox', { name: 'Cash refund amount' }))
-    await userEventApi.type(screen.getByRole('textbox', { name: 'Cash refund amount' }), '5')
+    await userEventApi.type(screen.getByPlaceholderText('Enter return quantity'), '1')
+    const refundAmount = screen.getByRole('spinbutton', { name: 'Cash refund amount' })
+    await userEventApi.clear(refundAmount)
+    await userEventApi.type(refundAmount, '5')
     await userEventApi.click(screen.getByRole('button', { name: 'Record return' }))
 
     await waitFor(() => {

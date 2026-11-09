@@ -11,7 +11,8 @@ const locationCodeSchema = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(/^[A-Z0-9][A-Z0-9_-]{1,31}$/)
+  .min(2)
+  .max(32)
 const locationNameSchema = z.string().trim().min(1).max(120)
 const optionalContactSchema = z
   .string()

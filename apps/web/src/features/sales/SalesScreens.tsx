@@ -10,6 +10,7 @@ import { Card } from '../../shared/components/Card'
 import { useConfirmDialog } from '../../shared/components/ConfirmDialog'
 import { ToastError } from '../../shared/components/ToastError'
 import { formatLocaleDate } from '../../shared/i18n/formatDate'
+import { translateMeasurementUnit } from '../../shared/i18n/measurementUnits'
 import type { Sale } from './SalesService'
 
 const fieldClass = 'min-h-11 w-full rounded-xl border border-[var(--border)] bg-white px-3 text-[var(--ink)]'
@@ -125,6 +126,7 @@ export function SaleDetailsScreen() {
             <SaleValue label={t('salesHistory.date')} value={formatLocaleDate(sale.createdAt, true)} />
             <SaleValue label={t('salesHistory.statusLabel')} value={t(`salesHistory.status.${sale.status}`)} />
             <SaleValue label={t('salesHistory.subtotal')} value={sale.subtotal} />
+            {Number(sale.additionalTotal) > 0 && <SaleValue label={`${t('salesPos.additionalAmount')} (${sale.additionalRate}%)`} value={sale.additionalTotal} />}
             <SaleValue label={t('salesHistory.tax')} value={sale.taxTotal} />
             <SaleValue label={t('salesHistory.total')} value={sale.total} />
             <SaleValue label={t('salesHistory.paid')} value={sale.amountPaid} />
@@ -137,7 +139,7 @@ export function SaleDetailsScreen() {
             {sale.items.map((item) => (
               <div className="grid gap-1 border-b border-[var(--border)] pb-3 text-sm sm:grid-cols-4" key={item.id}>
                 <span className="font-semibold">{item.productName} · {item.sku}</span>
-                <span>{item.quantity} {item.unitName}</span>
+                <span>{item.quantity} {translateMeasurementUnit(item.unitName, t)}</span>
                 <span>{item.unitPrice}</span>
                 <span className="font-bold">{item.lineTotal}</span>
               </div>
@@ -196,7 +198,7 @@ export function SalesReturnsScreen() {
   const saleId = searchParams.get('sale') ?? ''
   const [quantities, setQuantities] = useState<Record<string, string>>({})
   const [reason, setReason] = useState('')
-  const [refundAmount, setRefundAmount] = useState('0')
+  const [refundAmount, setRefundAmount] = useState('')
   const [refundMethod, setRefundMethod] = useState<'cash' | 'card' | 'bank_transfer' | 'mobile'>('cash')
   const [refundReference, setRefundReference] = useState('')
   const [error, setError] = useState('')
@@ -229,7 +231,7 @@ export function SalesReturnsScreen() {
       const returnId = await sales.returnSale(user.id, sale.id, {
         reason,
         items: selectedItems,
-        refundAmount,
+        refundAmount: refundAmount.trim() || '0',
         ...(Number(refundAmount) > 0 ? { refundMethod, refundReference: refundReference || null } : {}),
       })
       navigate(`/sales/${sale.id}`, { replace: true, state: { returnId } })
@@ -274,16 +276,15 @@ export function SalesReturnsScreen() {
                     <span>{item.productName} · {item.sku} ({t('salesReturns.available')}: {available})</span>
                     <input
                       className={fieldClass}
-                      inputMode="decimal"
                       max={available}
                       min="0"
                       onChange={(event) => setQuantities({ ...quantities, [item.id]: event.target.value })}
-                      placeholder="0"
+                      placeholder={t('salesReturns.returnQuantity')}
                       step="any"
                       type="number"
                       value={quantities[item.id] ?? ''}
                     />
-                    <span>{item.unitName}</span>
+                    <span>{translateMeasurementUnit(item.unitName, t)}</span>
                   </label>
                 )
               })}
@@ -295,7 +296,7 @@ export function SalesReturnsScreen() {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="grid gap-1 text-sm font-semibold">
                 {t('salesReturns.cashRefund')}
-                <input className={fieldClass} inputMode="decimal" min="0" onChange={(event) => setRefundAmount(event.target.value)} required value={refundAmount} />
+                <input className={fieldClass} min="0" onChange={(event) => setRefundAmount(event.target.value)} placeholder={t('salesReturns.cashRefund')} step="any" type="number" value={refundAmount} />
               </label>
               {Number(refundAmount) > 0 && (
                 <>

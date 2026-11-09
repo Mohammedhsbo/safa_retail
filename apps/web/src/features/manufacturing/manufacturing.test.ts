@@ -128,6 +128,18 @@ beforeEach(async () => {
     sellingPrice: '6',
     minimumStock: '0',
   }, branchId)
+  await catalog.assignProductToWarehouse(
+    ownerId,
+    finishedProductId,
+    branchId,
+    warehouseId,
+  )
+  await catalog.assignProductToWarehouse(
+    ownerId,
+    rawMaterialId,
+    branchId,
+    warehouseId,
+  )
 })
 
 afterEach(async () => {
@@ -283,6 +295,12 @@ describe('manufacturing orders', () => {
       sellingPrice: '3',
       minimumStock: '0',
     }, branchId)
+    await catalog.assignProductToWarehouse(
+      ownerId,
+      secondRaw,
+      branchId,
+      warehouseId,
+    )
     const orderId = await manufacturing.createOrder(ownerId, {
       warehouseId,
       finishedProductId,
@@ -344,6 +362,45 @@ describe('manufacturing orders', () => {
     await expect(manufacturing.planOrder(ownerId, orderId)).rejects.toThrow(
       /cannot move to planned/,
     )
+  })
+
+  it('rejects manufacturing orders in fabric warehouses', async () => {
+    const fabricWarehouseId = await organization.createWarehouse(ownerId, {
+      branchId,
+      code: 'fabrics',
+      name: 'Fabrics Warehouse',
+      warehouseType: 'fabrics',
+    })
+
+    await expect(manufacturing.createOrder(ownerId, {
+      warehouseId: fabricWarehouseId,
+      finishedProductId,
+      plannedQuantity: '1',
+      materials: [{ productId: rawMaterialId, unitId, plannedQuantity: '1' }],
+    })).rejects.toThrow(/only available in clothing manufacturing warehouses/)
+  })
+
+  it('lists clothing production orders only for the selected warehouse', async () => {
+    const firstOrderId = await createOrder()
+    const secondWarehouseId = await organization.createWarehouse(ownerId, {
+      branchId,
+      code: 'factory-2',
+      name: 'Second Factory',
+      warehouseType: 'clothing_manufacturing',
+    })
+    await catalog.assignProductToWarehouse(ownerId, finishedProductId, branchId, secondWarehouseId)
+    await catalog.assignProductToWarehouse(ownerId, rawMaterialId, branchId, secondWarehouseId)
+    const secondOrderId = await manufacturing.createOrder(ownerId, {
+      warehouseId: secondWarehouseId,
+      finishedProductId,
+      plannedQuantity: '3',
+      materials: [{ productId: rawMaterialId, unitId, plannedQuantity: '3' }],
+    })
+
+    expect(await manufacturing.listOrders(ownerId, branchId, warehouseId))
+      .toEqual([expect.objectContaining({ id: firstOrderId, warehouseId })])
+    expect(await manufacturing.listOrders(ownerId, branchId, secondWarehouseId))
+      .toEqual([expect.objectContaining({ id: secondOrderId, warehouseId: secondWarehouseId })])
   })
 
   it('rejects invalid quantities, duplicate requirements, and completion before consumption', async () => {

@@ -9,6 +9,7 @@ import { Button } from '../../shared/components/Button'
 import { Card } from '../../shared/components/Card'
 import { ToastError } from '../../shared/components/ToastError'
 import { formatLocaleDate } from '../../shared/i18n/formatDate'
+import { translateMeasurementUnit } from '../../shared/i18n/measurementUnits'
 import type { Purchase, Supplier } from './PurchasesService'
 import type { CatalogProduct } from '../catalog/ProductCatalogService'
 
@@ -38,18 +39,20 @@ export function PurchasesScreen() {
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async (): Promise<void> => {
-    if (!user || !branchId) return
+    if (!user || !branchId || !warehouseId) return
     const [availablePurchases, availableSuppliers, availableProducts] = await Promise.all([
       user.permissions.includes('purchases.read')
         ? services.purchases.listPurchases(user.id, { branchId, limit: 100, offset: 0 })
         : Promise.resolve([]),
       canManageSuppliers ? services.purchases.listSuppliers(user.id) : Promise.resolve([]),
-      canReadProducts ? services.catalog.listProducts(user.id) : Promise.resolve([]),
+      canReadProducts
+        ? services.catalog.listProducts(user.id, branchId, warehouseId)
+        : Promise.resolve([]),
     ])
     setPurchases(availablePurchases)
     setSuppliers(availableSuppliers.filter((item) => item.status === 'active'))
     setProducts(availableProducts.filter((item) => item.status === 'active'))
-  }, [branchId, canManageSuppliers, canReadProducts, services, user])
+  }, [branchId, canManageSuppliers, canReadProducts, services, user, warehouseId])
 
   useEffect(() => {
     let active = true
@@ -136,18 +139,18 @@ export function PurchasesScreen() {
                     </select>
                   </label>
                   <label className="grid gap-1 text-sm font-semibold">{t('purchases.quantity')}
-                    <input className={fieldClass} inputMode="decimal" min="0.000000001" onChange={(event) => {
+                    <input className={fieldClass} min="0.000000001" onChange={(event) => {
                       const next = [...items]
                       next[index] = { ...item, quantity: event.target.value }
                       setItems(next)
-                    }} required value={item.quantity} />
+                    }} required step="any" type="number" value={item.quantity} />
                   </label>
                   <label className="grid gap-1 text-sm font-semibold">{t('purchases.unitCost')}
-                    <input className={fieldClass} inputMode="decimal" min="0" onChange={(event) => {
+                    <input className={fieldClass} min="0" onChange={(event) => {
                       const next = [...items]
                       next[index] = { ...item, unitCost: event.target.value }
                       setItems(next)
-                    }} required value={item.unitCost} />
+                    }} required step="any" type="number" value={item.unitCost} />
                   </label>
                   <Button
                     aria-label={t('purchases.removeItem')}
@@ -287,7 +290,7 @@ export function PurchaseDetailsScreen() {
             {purchase.items.map((item) => (
               <div className="grid gap-1 border-b border-[var(--border)] pb-3 text-sm sm:grid-cols-4" key={item.id}>
                 <span className="font-semibold">{item.productName} · {item.sku}</span>
-                <span>{item.quantity} {item.unitName}</span>
+                <span>{item.quantity} {translateMeasurementUnit(item.unitName, t)}</span>
                 <span>{item.unitCost}</span>
                 <span className="font-bold">{item.lineTotal}</span>
               </div>
@@ -305,7 +308,7 @@ export function PurchaseDetailsScreen() {
             <Card className="space-y-3 p-5">
               <h2 className="font-bold">{t('purchases.recordPayment')}</h2>
               <form className="grid gap-3 sm:grid-cols-3" onSubmit={(event) => void recordPayment(event)}>
-                <input aria-label={t('purchases.paymentAmount')} className={fieldClass} inputMode="decimal" min="0" onChange={(event) => setPaymentAmount(event.target.value)} placeholder={t('purchases.paymentAmount')} required value={paymentAmount} />
+                <input aria-label={t('purchases.paymentAmount')} className={fieldClass} min="0" onChange={(event) => setPaymentAmount(event.target.value)} placeholder={t('purchases.paymentAmount')} required step="any" type="number" value={paymentAmount} />
                 <select aria-label={t('purchases.paymentMethod')} className={fieldClass} onChange={(event) => {
                   const method = event.target.value
                   if (['cash', 'card', 'bank_transfer', 'mobile', 'other'].includes(method)) {
@@ -328,8 +331,8 @@ export function PurchaseDetailsScreen() {
                   return (
                     <label className="grid items-center gap-2 text-sm sm:grid-cols-[1fr_9rem_8rem]" key={item.id}>
                       <span>{item.productName} · {item.sku} ({t('purchases.available')}: {available})</span>
-                      <input className={fieldClass} inputMode="decimal" max={available} min="0" onChange={(event) => setReturnQuantities({ ...returnQuantities, [item.id]: event.target.value })} placeholder="0" step="any" type="number" value={returnQuantities[item.id] ?? ''} />
-                      <span>{item.unitName}</span>
+                      <input className={fieldClass} max={available} min="0" onChange={(event) => setReturnQuantities({ ...returnQuantities, [item.id]: event.target.value })} placeholder={t('purchases.returnQuantity')} step="any" type="number" value={returnQuantities[item.id] ?? ''} />
+                      <span>{translateMeasurementUnit(item.unitName, t)}</span>
                     </label>
                   )
                 })}

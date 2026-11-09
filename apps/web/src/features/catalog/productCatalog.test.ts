@@ -166,6 +166,9 @@ describe('product catalog', () => {
 
   it('initializes the requested standard units idempotently and supports custom fractional units', async () => {
     const before = await catalog.listUnits(ownerId)
+    await database.withTransaction((transaction) =>
+      transaction.run('DELETE FROM measurement_units WHERE code = ?', ['TOP']),
+    )
     await catalog.initializeStandardUnits(ownerId)
     const after = await catalog.listUnits(ownerId)
     expect(after).toHaveLength(before.length)
@@ -180,9 +183,15 @@ describe('product catalog', () => {
         'Milliliter',
         'Meter',
         'Roll',
+        'التوب',
         'Bundle',
       ]),
     )
+    expect(after.find((unit) => unit.code === 'TOP')).toMatchObject({
+      name: 'التوب',
+      dimension: 'count',
+      decimalPlaces: 0,
+    })
     expect(after.find((unit) => unit.code === 'KG')).toMatchObject({
       dimension: 'mass',
       decimalPlaces: 3,
@@ -204,6 +213,24 @@ describe('product catalog', () => {
         code: 'YARD',
         decimalPlaces: 2,
         status: 'active',
+      }),
+    )
+  })
+
+  it('adds missing standard pricing units for product editors', async () => {
+    const editorId = await createEmployee('product-editor', ['products.update'])
+    await database.withTransaction((transaction) =>
+      transaction.run('DELETE FROM measurement_units WHERE code = ?', ['TOP']),
+    )
+
+    await catalog.initializeStandardUnits(editorId)
+
+    expect(await catalog.listUnits(ownerId)).toContainEqual(
+      expect.objectContaining({
+        code: 'TOP',
+        name: 'التوب',
+        dimension: 'count',
+        decimalPlaces: 0,
       }),
     )
   })
@@ -453,5 +480,70 @@ describe('product catalog', () => {
     ).rejects.toThrow(AuthorizationError)
     await expect(catalog.getProduct(employeeId, productId, branchId))
       .resolves.toMatchObject({ id: productId })
+  })
+
+  it('keeps product assignment and pricing isolated to each warehouse', async () => {
+    const firstWarehouseId = await organization.createWarehouse(ownerId, {
+      branchId,
+      code: 'first',
+      name: 'First Warehouse',
+      warehouseType: 'fabrics',
+    })
+    const secondWarehouseId = await organization.createWarehouse(ownerId, {
+      branchId,
+      code: 'second',
+      name: 'Second Warehouse',
+      warehouseType: 'fabrics',
+    })
+    const productId = await createProduct({ sku: 'WAREHOUSE-ONLY' })
+
+    await catalog.assignProductToWarehouse(
+      ownerId,
+      productId,
+      branchId,
+      firstWarehouseId,
+    )
+    expect(await catalog.listProducts(ownerId, branchId, firstWarehouseId))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ id: productId })]))
+    expect(await catalog.listProducts(ownerId, branchId, secondWarehouseId))
+      .not.toEqual(expect.arrayContaining([expect.objectContaining({ id: productId })]))
+    expect(await catalog.listProductsNotInWarehouse(ownerId, branchId, secondWarehouseId))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ id: productId })]))
+
+    const firstWarehouseProduct = await catalog.getProduct(
+      ownerId,
+      productId,
+      branchId,
+      firstWarehouseId,
+    )
+    expect(firstWarehouseProduct).not.toBeNull()
+    if (!firstWarehouseProduct) throw new Error('Assigned product was not loaded')
+    await catalog.updateProduct(ownerId, productId, {
+      sku: firstWarehouseProduct.sku,
+      name: firstWarehouseProduct.name,
+      categoryId: firstWarehouseProduct.categoryId,
+      brandId: firstWarehouseProduct.brandId,
+      description: firstWarehouseProduct.description,
+      baseUnitId: firstWarehouseProduct.baseUnitId,
+      purchasePrice: firstWarehouseProduct.purchasePrice,
+      sellingPrice: '25',
+      minimumStock: firstWarehouseProduct.minimumStock,
+      status: firstWarehouseProduct.status,
+      barcodes: firstWarehouseProduct.barcodes,
+      attributes: firstWarehouseProduct.attributes,
+      images: firstWarehouseProduct.images,
+      conversions: firstWarehouseProduct.conversions,
+    }, branchId, firstWarehouseId)
+    await catalog.assignProductToWarehouse(
+      ownerId,
+      productId,
+      branchId,
+      secondWarehouseId,
+    )
+
+    expect(await catalog.getProduct(ownerId, productId, branchId, firstWarehouseId))
+      .toMatchObject({ sellingPrice: '25' })
+    expect(await catalog.getProduct(ownerId, productId, branchId, secondWarehouseId))
+      .toMatchObject({ sellingPrice: '18.75' })
   })
 })

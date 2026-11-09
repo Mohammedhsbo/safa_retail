@@ -185,6 +185,8 @@ export class InventoryService {
         parsed.data.productId,
         parsed.data.warehouseId,
         transaction,
+        true,
+        parsed.data.direction === 'in',
       )
       const normalized = await this.normalizeQuantity(
         parsed.data.productId,
@@ -392,7 +394,13 @@ export class InventoryService {
         item.quantity,
         executor,
       )
-      await this.assertProductAvailability(item.productId, warehouseId, executor)
+      await this.assertProductAvailability(
+        item.productId,
+        warehouseId,
+        executor,
+        true,
+        true,
+      )
       const unit = await this.getProductUnit(
         item.productId,
         item.unitId,
@@ -1317,6 +1325,12 @@ export class InventoryService {
     if (item.baseQuantity <= 0n) {
       throw new InventoryError('Incoming stock quantity must be positive')
     }
+    await this.repository.ensureProductWarehouseAvailabilityFromBranch(
+      item.productId,
+      warehouseId,
+      now,
+      executor,
+    )
     const previous = await this.repository.getBalance(
       item.productId,
       warehouseId,
@@ -1549,23 +1563,43 @@ export class InventoryService {
     warehouseId: string,
     executor: SqlExecutor,
     requireActiveAvailability = true,
+    allowUnassignedWarehouse = false,
   ): Promise<void> {
     const activeFilter = requireActiveAvailability
       ? "AND a.status = 'active'"
       : ''
     const [row] = await executor.query<{ available: number }>(
       `SELECT 1 AS available
-       FROM product_branch_availability a
-       JOIN warehouses w ON w.branch_id = a.branch_id
-       WHERE a.product_id = ? AND w.id = ? ${activeFilter}
+       FROM product_warehouse_availability a
+       WHERE a.product_id = ? AND a.warehouse_id = ? ${activeFilter}
        LIMIT 1`,
       [productId, warehouseId],
     )
-    if (!row) {
-      throw new AuthorizationError(
-        'The product is not available in the selected branch',
-      )
+    if (row) {
+      return
     }
+
+    if (allowUnassignedWarehouse) {
+      const [branchAvailability] = await executor.query<{ available: number }>(
+        `SELECT 1 AS available
+         FROM product_branch_availability a
+         JOIN warehouses w ON w.branch_id = a.branch_id
+         WHERE a.product_id = ? AND w.id = ? AND a.status = 'active'
+           AND NOT EXISTS (
+             SELECT 1 FROM product_warehouse_availability wa
+             WHERE wa.product_id = a.product_id AND wa.warehouse_id = w.id
+           )
+         LIMIT 1`,
+        [productId, warehouseId],
+      )
+      if (branchAvailability) {
+        return
+      }
+    }
+
+    throw new AuthorizationError(
+      'The product is not assigned to the selected warehouse',
+    )
   }
 
   private async getProductUnit(

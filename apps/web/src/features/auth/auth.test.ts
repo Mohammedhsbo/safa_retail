@@ -15,7 +15,7 @@ import { Pbkdf2PasswordHasher } from './PasswordHasher'
 import { RoleManagementService } from './RoleManagementService'
 import { useSessionStore } from './session-store'
 import { UserManagementService } from './UserManagementService'
-import type { PasswordHasher } from './auth.types'
+import { permissionCodes, type PasswordHasher } from './auth.types'
 
 class TestPasswordHasher implements PasswordHasher {
   async hash(password: string): Promise<string> {
@@ -259,7 +259,7 @@ describe('local authentication and permissions', () => {
     })).resolves.toMatchObject({ id: employeeId, displayName: 'Updated Employee' })
   })
 
-  it('seeds system roles with no default non-owner permission grants', async () => {
+  it('seeds business-specific system role permissions once and preserves edits', async () => {
     await authentication.initialize()
     const roles = await repository.getRoles()
     const expectedRoleCodes = [
@@ -275,8 +275,76 @@ describe('local authentication and permissions', () => {
 
     expect(roles.map((role) => role.code)).toEqual(expectedRoleCodes)
 
-    for (const role of roles.filter((item) => item.code !== 'system_owner')) {
-      expect(await repository.getRolePermissionCodes(role.id)).toEqual([])
+    const expectedPermissions: Record<string, string[]> = {
+      general_manager: permissionCodes.filter(
+        (permission) => permission !== 'settings.manage',
+      ),
+      branch_manager: [
+        'products.read',
+        'products.create',
+        'products.update',
+        'sales.read',
+        'sales.create',
+        'sales.cancel',
+        'sales.discount',
+        'sales.returns',
+        'purchases.read',
+        'purchases.create',
+        'purchases.returns',
+        'inventory.read',
+        'inventory.adjust',
+        'inventory.transfer',
+        'inventory.count',
+        'customers.manage',
+        'suppliers.manage',
+        'accounting.read',
+        'reports.read',
+        'manufacturing.manage',
+      ],
+      warehouse_manager: [
+        'products.read',
+        'purchases.read',
+        'inventory.read',
+        'inventory.adjust',
+        'inventory.transfer',
+        'inventory.count',
+        'reports.read',
+      ],
+      sales_employee: [
+        'products.read',
+        'sales.read',
+        'sales.create',
+        'customers.manage',
+      ],
+      purchasing_employee: [
+        'products.read',
+        'purchases.read',
+        'purchases.create',
+        'purchases.returns',
+        'inventory.read',
+        'suppliers.manage',
+      ],
+      accountant: [
+        'sales.read',
+        'purchases.read',
+        'inventory.read',
+        'accounting.read',
+        'accounting.manage',
+        'reports.read',
+      ],
+      manufacturing_employee: [
+        'products.read',
+        'inventory.read',
+        'manufacturing.manage',
+      ],
+    }
+
+    for (const [roleCode, expected] of Object.entries(expectedPermissions)) {
+      const role = roles.find((item) => item.code === roleCode)
+      expect(role).toBeDefined()
+      expect(await repository.getRolePermissionCodes(role!.id)).toEqual(
+        [...expected].sort(),
+      )
     }
 
     const ownerRole = roles.find((role) => role.code === 'system_owner')
@@ -284,6 +352,14 @@ describe('local authentication and permissions', () => {
     expect(
       await repository.getRolePermissionCodes(ownerRole!.id),
     ).toContain('users.manage')
+
+    const salesRole = roles.find((role) => role.code === 'sales_employee')
+    expect(salesRole).toBeDefined()
+    await repository.setRolePermissions(salesRole!.id, ['products.read'])
+    await authentication.initialize()
+    expect(await repository.getRolePermissionCodes(salesRole!.id)).toEqual([
+      'products.read',
+    ])
   })
 
   it('enforces user management, permission grants, and warehouse/branch scope in services', async () => {

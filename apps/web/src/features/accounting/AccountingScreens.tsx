@@ -84,7 +84,7 @@ export function ExpensesScreen() {
               <input className={fieldClass} maxLength={80} onChange={(event) => setCategory(event.target.value)} required value={category} />
             </label>
             <label className="grid gap-1 text-sm font-semibold">{t('accounting.amount')}
-              <input className={fieldClass} inputMode="decimal" min="0.000000001" onChange={(event) => setAmount(event.target.value)} required value={amount} />
+              <input className={fieldClass} min="0.000000001" onChange={(event) => setAmount(event.target.value)} required step="any" type="number" value={amount} />
             </label>
             <label className="grid gap-1 text-sm font-semibold">{t('accounting.description')}
               <input className={fieldClass} maxLength={500} minLength={2} onChange={(event) => setDescription(event.target.value)} required value={description} />
@@ -224,7 +224,7 @@ export function CashboxesScreen() {
                   <option value="receipt">{t('accounting.receipt')}</option>
                   <option value="disbursement">{t('accounting.disbursement')}</option>
                 </select>
-                <input aria-label={t('accounting.amount')} className={fieldClass} inputMode="decimal" min="0.000000001" onChange={(event) => setEntryAmount(event.target.value)} placeholder={t('accounting.amount')} required value={entryAmount} />
+                <input aria-label={t('accounting.amount')} className={fieldClass} min="0.000000001" onChange={(event) => setEntryAmount(event.target.value)} placeholder={t('accounting.amount')} required step="any" type="number" value={entryAmount} />
                 <input aria-label={t('accounting.description')} className={fieldClass} maxLength={500} minLength={2} onChange={(event) => setEntryDescription(event.target.value)} placeholder={t('accounting.description')} required value={entryDescription} />
                 <Button disabled={busy}>{t('accounting.saveMovement')}</Button>
               </form>

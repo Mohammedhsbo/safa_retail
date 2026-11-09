@@ -3,6 +3,7 @@ import { createUuid } from '../../infrastructure/database/uuid'
 import type { SqlDatabase, SqlExecutor, SqlRow } from '../../infrastructure/database/types'
 import { AccessControlService } from '../auth/AccessControlService'
 import { AuthRepository } from '../auth/AuthRepository'
+import { AuthorizationError } from '../auth/auth.errors'
 import { CatalogError } from './catalog.errors'
 import { ProductCatalogRepository } from './ProductCatalogRepository'
 
@@ -238,6 +239,7 @@ const standardUnits = [
   { code: 'ML', name: 'Milliliter', dimension: 'volume', decimalPlaces: 0 },
   { code: 'M', name: 'Meter', dimension: 'length', decimalPlaces: 3 },
   { code: 'ROLL', name: 'Roll', dimension: 'count', decimalPlaces: 0 },
+  { code: 'TOP', name: 'التوب', dimension: 'count', decimalPlaces: 0 },
   { code: 'BUNDLE', name: 'Bundle', dimension: 'count', decimalPlaces: 0 },
 ] as const
 
@@ -453,11 +455,16 @@ export class ProductCatalogService {
   async initializeStandardUnits(actorId: string): Promise<void> {
     const now = new Date().toISOString()
     await this.database.withTransaction(async (transaction) => {
-      await this.access.assertPermission(
-        actorId,
-        'products.create',
-        transaction,
-      )
+      const principal = await this.authRepository.getPrincipal(actorId, transaction)
+      if (
+        !principal ||
+        (!principal.permissions.includes('products.create') &&
+          !principal.permissions.includes('products.update'))
+      ) {
+        throw new AuthorizationError(
+          'Permission required: products.create or products.update',
+        )
+      }
       const existing = await this.repository.listUnits(transaction)
       const codes = new Set(
         existing.map((row) => String(row.code).toUpperCase()),
@@ -597,12 +604,24 @@ export class ProductCatalogService {
   async listProducts(
     actorId: string,
     branchId?: string,
+    warehouseId?: string,
   ): Promise<CatalogProduct[]> {
     await this.access.assertPermission(actorId, 'products.read')
-    if (branchId) await this.assertProductBranchAccess(actorId, branchId)
-    const rows = branchId
-      ? await this.repository.listProductsForBranch(branchId)
-      : await this.repository.listProducts()
+    if (warehouseId && !branchId) {
+      throw new CatalogError('A branch is required when selecting a warehouse')
+    }
+    if (branchId) {
+      if (warehouseId) {
+        await this.assertProductWarehouseAccess(actorId, branchId, warehouseId)
+      } else {
+        await this.assertProductBranchAccess(actorId, branchId)
+      }
+    }
+    const rows = warehouseId && branchId
+      ? await this.repository.listProductsForWarehouse(branchId, warehouseId)
+      : branchId
+        ? await this.repository.listProductsForBranch(branchId)
+        : await this.repository.listProducts()
     return Promise.all(
       rows.map(async (row) =>
         this.loadProduct(row, this.database),
@@ -614,15 +633,27 @@ export class ProductCatalogService {
     actorId: string,
     productId: string,
     branchId?: string,
+    warehouseId?: string,
   ): Promise<CatalogProduct | null> {
     await this.access.assertPermission(actorId, 'products.read')
     if (!z.string().uuid().safeParse(productId).success) {
       throw new CatalogError('The product identifier is invalid')
     }
-    if (branchId) await this.assertProductBranchAccess(actorId, branchId)
-    const row = branchId
-      ? await this.repository.getProductForBranch(productId, branchId)
-      : await this.repository.getProduct(productId)
+    if (warehouseId && !branchId) {
+      throw new CatalogError('A branch is required when selecting a warehouse')
+    }
+    if (branchId) {
+      if (warehouseId) {
+        await this.assertProductWarehouseAccess(actorId, branchId, warehouseId)
+      } else {
+        await this.assertProductBranchAccess(actorId, branchId)
+      }
+    }
+    const row = warehouseId && branchId
+      ? await this.repository.getProductForWarehouse(productId, branchId, warehouseId)
+      : branchId
+        ? await this.repository.getProductForBranch(productId, branchId)
+        : await this.repository.getProduct(productId)
     return row ? this.loadProduct(row, this.database) : null
   }
 
@@ -630,26 +661,87 @@ export class ProductCatalogService {
     actorId: string,
     barcode: string,
     branchId?: string,
+    warehouseId?: string,
   ): Promise<CatalogProduct | null> {
     await this.access.assertPermission(actorId, 'products.read')
     const parsedBarcode = z.string().trim().min(1).max(128).safeParse(barcode)
     if (!parsedBarcode.success) {
       throw new CatalogError('The barcode is invalid')
     }
-    if (branchId) await this.assertProductBranchAccess(actorId, branchId)
-    const row = branchId
-      ? await this.repository.getProductByBarcodeForBranch(
+    if (warehouseId && !branchId) {
+      throw new CatalogError('A branch is required when selecting a warehouse')
+    }
+    if (branchId) {
+      if (warehouseId) {
+        await this.assertProductWarehouseAccess(actorId, branchId, warehouseId)
+      } else {
+        await this.assertProductBranchAccess(actorId, branchId)
+      }
+    }
+    const row = warehouseId && branchId
+      ? await this.repository.getProductByBarcodeForWarehouse(
           parsedBarcode.data,
           branchId,
+          warehouseId,
         )
-      : await this.repository.getProductByBarcode(parsedBarcode.data)
+      : branchId
+        ? await this.repository.getProductByBarcodeForBranch(
+            parsedBarcode.data,
+            branchId,
+          )
+        : await this.repository.getProductByBarcode(parsedBarcode.data)
     return row ? this.loadProduct(row, this.database) : null
+  }
+
+  async listProductsNotInWarehouse(
+    actorId: string,
+    branchId?: string,
+    warehouseId?: string,
+  ): Promise<CatalogProduct[]> {
+    await this.access.assertPermission(actorId, 'products.read')
+    if (!branchId || !warehouseId) {
+      throw new CatalogError('Select a branch and warehouse first')
+    }
+    await this.assertProductWarehouseAccess(actorId, branchId, warehouseId)
+    const rows = await this.repository.listProductsNotInWarehouse(branchId, warehouseId)
+    return Promise.all(rows.map((row) => this.loadProduct(row, this.database)))
+  }
+
+  async assignProductToWarehouse(
+    actorId: string,
+    productId: string,
+    branchId?: string,
+    warehouseId?: string,
+  ): Promise<void> {
+    if (!z.string().uuid().safeParse(productId).success || !branchId || !warehouseId) {
+      throw new CatalogError('The product and warehouse selection is invalid')
+    }
+    const now = new Date().toISOString()
+    await this.database.withTransaction(async (transaction) => {
+      await this.access.assertPermission(actorId, 'products.create', transaction)
+      await this.assertProductWarehouseAccess(actorId, branchId, warehouseId, transaction)
+      if (!(await this.repository.hasProductBranchAvailability(
+        productId,
+        branchId,
+        transaction,
+      ))) {
+        throw new CatalogError('The product is not available in this branch')
+      }
+      await this.repository.assignProductToWarehouse(
+        productId,
+        branchId,
+        warehouseId,
+        now,
+        transaction,
+      )
+    })
   }
 
   async createProduct(
     actorId: string,
     input: unknown,
     branchId?: string,
+    warehouseId?: string,
   ): Promise<string> {
     const parsed = productInputSchema.safeParse(input)
     if (!parsed.success) {
@@ -666,7 +758,13 @@ export class ProductCatalogService {
         transaction,
       )
       if (branchId) {
-        await this.assertProductBranchAccess(actorId, branchId, transaction)
+        if (warehouseId) {
+          await this.assertProductWarehouseAccess(actorId, branchId, warehouseId, transaction)
+        } else {
+          await this.assertProductBranchAccess(actorId, branchId, transaction)
+        }
+      } else if (warehouseId) {
+        throw new CatalogError('A branch is required when selecting a warehouse')
       }
       await this.assertActiveReferences(
         parsed.data,
@@ -686,6 +784,21 @@ export class ProductCatalogService {
           {
             productId: id,
             branchId,
+            purchasePrice: parsed.data.purchasePrice,
+            sellingPrice: parsed.data.sellingPrice,
+            minimumStock: parsed.data.minimumStock,
+            status: 'active',
+            createdAt: now,
+          },
+          transaction,
+        )
+      }
+      if (branchId && warehouseId) {
+        await this.repository.createProductWarehouseAvailability(
+          {
+            productId: id,
+            branchId,
+            warehouseId,
             purchasePrice: parsed.data.purchasePrice,
             sellingPrice: parsed.data.sellingPrice,
             minimumStock: parsed.data.minimumStock,
@@ -720,6 +833,7 @@ export class ProductCatalogService {
     productId: string,
     input: unknown,
     branchId?: string,
+    warehouseId?: string,
   ): Promise<void> {
     const parsed = productInputSchema.safeParse(input)
     if (
@@ -729,6 +843,9 @@ export class ProductCatalogService {
       throw new CatalogError('The product details are invalid')
     }
     this.assertUniqueDetails(parsed.data)
+    if (warehouseId && !branchId) {
+      throw new CatalogError('A branch is required when selecting a warehouse')
+    }
     const now = new Date().toISOString()
 
     await this.database.withTransaction(async (transaction) => {
@@ -738,18 +855,31 @@ export class ProductCatalogService {
         transaction,
       )
       if (branchId) {
-        await this.assertProductBranchAccess(actorId, branchId, transaction)
-        if (!(await this.repository.hasProductBranchAvailability(
-          productId,
-          branchId,
-          transaction,
-        ))) {
-          throw new CatalogError('The product is not available in this branch')
+        if (warehouseId) {
+          await this.assertProductWarehouseAccess(actorId, branchId, warehouseId, transaction)
+          if (!(await this.repository.hasProductWarehouseAvailability(
+            productId,
+            warehouseId,
+            transaction,
+          ))) {
+            throw new CatalogError('The product is not available in this warehouse')
+          }
+        } else {
+          await this.assertProductBranchAccess(actorId, branchId, transaction)
+          if (!(await this.repository.hasProductBranchAvailability(
+            productId,
+            branchId,
+            transaction,
+          ))) {
+            throw new CatalogError('The product is not available in this branch')
+          }
         }
       }
-      const beforeRow = branchId
-        ? await this.repository.getProductForBranch(productId, branchId, transaction)
-        : await this.repository.getProduct(productId, transaction)
+      const beforeRow = warehouseId && branchId
+        ? await this.repository.getProductForWarehouse(productId, branchId, warehouseId, transaction)
+        : branchId
+          ? await this.repository.getProductForBranch(productId, branchId, transaction)
+          : await this.repository.getProduct(productId, transaction)
       if (!beforeRow || beforeRow.status === 'archived') {
         throw new CatalogError('The product does not exist or is archived')
       }
@@ -788,7 +918,19 @@ export class ProductCatalogService {
           transaction,
         )
       }
-      if (branchId) {
+      if (warehouseId) {
+        await this.repository.updateProductWarehouseAvailability(
+          productId,
+          warehouseId,
+          {
+            purchasePrice: parsed.data.purchasePrice,
+            sellingPrice: parsed.data.sellingPrice,
+            minimumStock: parsed.data.minimumStock,
+          },
+          now,
+          transaction,
+        )
+      } else if (branchId) {
         await this.repository.updateProductBranchAvailability(
           productId,
           branchId,
@@ -828,6 +970,7 @@ export class ProductCatalogService {
     productId: string,
     status: string,
     branchId?: string,
+    warehouseId?: string,
   ): Promise<void> {
     const parsedStatus = productStatusSchema.safeParse(status)
     if (
@@ -835,6 +978,9 @@ export class ProductCatalogService {
       !z.string().uuid().safeParse(productId).success
     ) {
       throw new CatalogError('The product status is invalid')
+    }
+    if (warehouseId && !branchId) {
+      throw new CatalogError('A branch is required when selecting a warehouse')
     }
     const now = new Date().toISOString()
     await this.database.withTransaction(async (transaction) => {
@@ -844,15 +990,29 @@ export class ProductCatalogService {
         transaction,
       )
       if (branchId) {
-        await this.assertProductBranchAccess(actorId, branchId, transaction)
+        if (warehouseId) {
+          await this.assertProductWarehouseAccess(actorId, branchId, warehouseId, transaction)
+        } else {
+          await this.assertProductBranchAccess(actorId, branchId, transaction)
+        }
       }
-      const before = branchId
-        ? await this.repository.getProductForBranch(productId, branchId, transaction)
-        : await this.repository.getProduct(productId, transaction)
+      const before = warehouseId && branchId
+        ? await this.repository.getProductForWarehouse(productId, branchId, warehouseId, transaction)
+        : branchId
+          ? await this.repository.getProductForBranch(productId, branchId, transaction)
+          : await this.repository.getProduct(productId, transaction)
       if (!before || before.status === 'archived') {
         throw new CatalogError('The product does not exist or is archived')
       }
-      if (branchId) {
+      if (warehouseId) {
+        await this.repository.setProductWarehouseAvailabilityStatus(
+          productId,
+          warehouseId,
+          parsedStatus.data,
+          now,
+          transaction,
+        )
+      } else if (branchId) {
         await this.repository.setProductBranchAvailabilityStatus(
           productId,
           branchId,
@@ -885,9 +1045,13 @@ export class ProductCatalogService {
     actorId: string,
     productId: string,
     branchId?: string,
+    warehouseId?: string,
   ): Promise<void> {
     if (!z.string().uuid().safeParse(productId).success) {
       throw new CatalogError('The product identifier is invalid')
+    }
+    if (warehouseId && !branchId) {
+      throw new CatalogError('A branch is required when selecting a warehouse')
     }
     const now = new Date().toISOString()
     await this.database.withTransaction(async (transaction) => {
@@ -897,15 +1061,29 @@ export class ProductCatalogService {
         transaction,
       )
       if (branchId) {
-        await this.assertProductBranchAccess(actorId, branchId, transaction)
+        if (warehouseId) {
+          await this.assertProductWarehouseAccess(actorId, branchId, warehouseId, transaction)
+        } else {
+          await this.assertProductBranchAccess(actorId, branchId, transaction)
+        }
       }
-      const product = branchId
-        ? await this.repository.getProductForBranch(productId, branchId, transaction)
-        : await this.repository.getProduct(productId, transaction)
+      const product = warehouseId && branchId
+        ? await this.repository.getProductForWarehouse(productId, branchId, warehouseId, transaction)
+        : branchId
+          ? await this.repository.getProductForBranch(productId, branchId, transaction)
+          : await this.repository.getProduct(productId, transaction)
       if (!product || product.status === 'archived') {
         throw new CatalogError('The active product does not exist')
       }
-      if (branchId) {
+      if (warehouseId) {
+        await this.repository.setProductWarehouseAvailabilityStatus(
+          productId,
+          warehouseId,
+          'inactive',
+          now,
+          transaction,
+        )
+      } else if (branchId) {
         await this.repository.setProductBranchAvailabilityStatus(
           productId,
           branchId,
@@ -1081,6 +1259,22 @@ export class ProductCatalogService {
       throw new CatalogError('The selected branch identifier is invalid')
     }
     await this.access.assertBranchAccess(actorId, branchId, executor)
+  }
+
+  private async assertProductWarehouseAccess(
+    actorId: string,
+    branchId: string,
+    warehouseId: string,
+    executor?: SqlExecutor,
+  ): Promise<void> {
+    if (
+      !z.string().uuid().safeParse(branchId).success ||
+      !z.string().uuid().safeParse(warehouseId).success
+    ) {
+      throw new CatalogError('The selected branch or warehouse identifier is invalid')
+    }
+    await this.access.assertBranchAccess(actorId, branchId, executor)
+    await this.access.assertWarehouseAccess(actorId, warehouseId, branchId, executor)
   }
 
   private hasSharedProductChanges(

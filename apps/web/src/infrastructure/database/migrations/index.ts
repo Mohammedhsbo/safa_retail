@@ -6,6 +6,7 @@ import { salesTaxSettingsStatements } from './003_sales_tax_settings'
 import { supplierInvoiceReferenceStatements } from './004_supplier_invoice_reference'
 import { branchProductAvailabilityStatements } from './005_branch_product_availability'
 import { productWarehouseAvailabilityStatements } from './006_product_warehouse_availability'
+import { salesAdditionalRateStatements } from './007_sales_additional_rate'
 import type { SqliteDatabase } from '../SqliteDatabase'
 
 export interface DatabaseMigration {
@@ -56,6 +57,11 @@ export const migrations: readonly DatabaseMigration[] = [
     version: 6,
     name: 'product_warehouse_availability',
     statements: productWarehouseAvailabilityStatements,
+  },
+  {
+    version: 7,
+    name: 'sales_additional_rate',
+    statements: salesAdditionalRateStatements,
   },
 ]
 

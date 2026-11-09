@@ -12,7 +12,7 @@ export class ManufacturingRepository {
     executor: SqlExecutor = this.database,
   ): Promise<SqlRow | null> {
     const [row] = await executor.query(
-      `SELECT w.id, w.branch_id,
+      `SELECT w.id, w.branch_id, w.warehouse_type,
               CASE WHEN w.status = 'active' AND w.is_active = FALSE THEN 'inactive'
                    ELSE w.status END AS warehouse_status,
               b.status AS branch_status

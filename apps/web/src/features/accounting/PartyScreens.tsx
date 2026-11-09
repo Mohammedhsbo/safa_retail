@@ -161,22 +161,38 @@ export function CustomerStatementScreen() {
 
   return (
     <PartyPage title={t('parties.statementTitle')} description={statement?.customer.name ?? ''} icon={<FileText aria-hidden="true" size={22} />} error={error}>
-      <Link className="text-sm font-bold text-[var(--brand)]" to="/customers">{t('parties.backToCustomers')}</Link>
+      <Link className="inline-flex min-h-10 items-center rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-bold text-[var(--brand)] transition hover:border-[var(--brand-border)] hover:bg-[var(--brand-wash)]" to="/customers">{t('parties.backToCustomers')}</Link>
       {statement && (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-5">
+          <Card className="overflow-hidden border-[var(--brand-border)] bg-gradient-to-br from-white via-white to-[var(--brand-wash)] p-5 sm:p-7">
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[var(--brand)] text-white shadow-[var(--shadow-brand)]">
+                <ContactRound aria-hidden="true" size={26} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold tracking-wide text-[var(--brand)]">{t('parties.statementTitle')}</p>
+                <h2 className="mt-1 break-words text-2xl font-black text-[var(--ink)]">{statement.customer.name}</h2>
+                <p className="mt-1 text-sm text-[var(--muted)]">{statement.customer.code}</p>
+              </div>
+              <div className="grid gap-1 text-sm text-[var(--muted)] sm:text-end">
+                {statement.customer.phone && <span dir="auto">{statement.customer.phone}</span>}
+                {statement.customer.email && <span className="break-all">{statement.customer.email}</span>}
+              </div>
+            </div>
+          </Card>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <Metric label={t('parties.invoiced')} value={statement.totalInvoiced} />
             <Metric label={t('parties.collected')} value={statement.totalCollected} />
             <Metric label={t('parties.returned')} value={statement.totalReturned} />
             <Metric label={t('parties.refunded')} value={statement.totalRefunded} />
-            <Metric label={t('parties.balanceDue')} value={statement.balanceDue} />
-            <Metric label={t('parties.customerCredit')} value={statement.customerCredit} />
+            <Metric accent="amber" label={t('parties.balanceDue')} value={statement.balanceDue} />
+            <Metric accent="green" label={t('parties.customerCredit')} value={statement.customerCredit} />
           </div>
           <StatementEntries
             entries={statement.entries}
             label={(entry) => t(`parties.customerEntry.${entry.type}`)}
           />
-        </>
+        </div>
       )}
     </PartyPage>
   )
@@ -426,29 +442,60 @@ function StatementEntries({
 }) {
   const { t } = useTranslation()
   return (
-    <Card className="space-y-3 p-5">
-      <h2 className="font-bold text-[var(--ink)]">{t('parties.transactions')}</h2>
-      {entries.length === 0 ? (
-        <p className="text-sm text-[var(--muted)]">{t('parties.noEntries')}</p>
-      ) : entries.map((entry) => (
-        <div className="grid gap-1 border-b border-[var(--border)] pb-3 text-sm sm:grid-cols-5" key={entry.id}>
-          <span className="font-semibold">{label(entry)}</span>
-          <span>{entry.reference}</span>
-          <span>{entry.amount}</span>
-          <span>{entry.balance}</span>
-          <span className="text-[var(--muted)]">{formatLocaleDate(entry.occurredAt)}</span>
-          <span className="text-[var(--muted)] sm:col-span-5">{entry.description}</span>
+    <Card className="space-y-4 p-4 sm:p-6">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="text-xs font-bold text-[var(--brand)]">{t('parties.statement')}</p>
+          <h2 className="mt-1 text-lg font-black text-[var(--ink)]">{t('parties.transactions')}</h2>
         </div>
-      ))}
+        <p className="text-sm text-[var(--muted)]">{entries.length} · {t('parties.transactions')}</p>
+      </div>
+      {entries.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface)] p-6 text-center text-sm text-[var(--muted)]">{t('parties.noEntries')}</div>
+      ) : (
+        <div className="space-y-3">
+          {entries.map((entry) => (
+            <article className="rounded-2xl border border-[var(--border)] bg-white p-4 transition hover:border-[var(--brand-border)] sm:p-5" key={entry.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="inline-flex rounded-full bg-[var(--brand-wash)] px-3 py-1 text-xs font-bold text-[var(--brand)]">{label(entry)}</span>
+                  <p className="mt-2 break-all font-bold text-[var(--ink)]">{entry.reference}</p>
+                  <p className="mt-1 break-words text-sm text-[var(--muted)]">{entry.description}</p>
+                </div>
+                <time className="text-xs text-[var(--muted)]" dateTime={entry.occurredAt}>{formatLocaleDate(entry.occurredAt, true)}</time>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-3">
+                <div>
+                  <p className="text-xs font-semibold text-[var(--muted)]">{t('parties.transactionAmount')}</p>
+                  <p className={`mt-1 font-black ${entry.amount.startsWith('-') ? 'text-[var(--brand)]' : 'text-[var(--ink)]'}`} dir="ltr">{entry.amount}</p>
+                </div>
+                <div className="text-end">
+                  <p className="text-xs font-semibold text-[var(--muted)]">{t('parties.runningBalance')}</p>
+                  <p className="mt-1 font-black text-[var(--ink)]" dir="ltr">{entry.balance}</p>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </Card>
   )
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  label,
+  value,
+  accent = 'neutral',
+}: {
+  label: string
+  value: string
+  accent?: 'neutral' | 'amber' | 'green'
+}) {
   return (
-    <Card className="p-4">
-      <p className="text-xs font-semibold text-[var(--muted)]">{label}</p>
-      <p className="mt-2 text-xl font-black text-[var(--ink)]">{value}</p>
+    <Card className={`relative overflow-hidden p-4 sm:p-5 ${accent === 'amber' ? 'border-amber-200 bg-amber-50/60' : accent === 'green' ? 'border-[var(--brand-border)] bg-[var(--brand-wash)]/60' : ''}`}>
+      <span className={`absolute inset-y-4 start-0 w-1 rounded-e-full ${accent === 'amber' ? 'bg-amber-500' : accent === 'green' ? 'bg-[var(--brand)]' : 'bg-[var(--border)]'}`} />
+      <p className="text-xs font-bold text-[var(--muted)]">{label}</p>
+      <p className="mt-2 break-all text-2xl font-black text-[var(--ink)]" dir="ltr">{value}</p>
     </Card>
   )
 }

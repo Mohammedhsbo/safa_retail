@@ -135,6 +135,23 @@ afterEach(async () => {
 })
 
 describe('sales and offline POS services', () => {
+  it('only offers and sells products assigned to the selected warehouse', async () => {
+    const secondWarehouseId = await organization.createWarehouse(ownerId, {
+      branchId,
+      code: 'second',
+      name: 'Second Warehouse',
+      warehouseType: 'fabrics',
+    })
+    await expect(sales.searchProducts(ownerId, {
+      warehouseId: secondWarehouseId,
+      query: '',
+    })).resolves.toEqual([])
+    await expect(sales.createSale(ownerId, {
+      warehouseId: secondWarehouseId,
+      items: [{ productId, unitId, quantity: '1' }],
+    })).rejects.toThrow('not active in this warehouse')
+  })
+
   it('searches by barcode and posts a discounted, taxed, partially paid invoice atomically', async () => {
     await expect(
       sales.getTaxConfiguration(ownerId, branchId),
@@ -245,6 +262,64 @@ describe('sales and offline POS services', () => {
     })
   })
 
+  it('calculates and persists a customer surcharge and includes it in returned item value', async () => {
+    await sales.setTaxConfiguration(ownerId, {
+      branchId,
+      taxRate: '10',
+      taxMode: 'exclusive',
+    })
+    const saleId = await sales.createSale(ownerId, {
+      warehouseId,
+      customerId,
+      additionalRate: '10',
+      items: [{
+        productId,
+        unitId,
+        quantity: '2',
+        discount: '2',
+      }],
+      payments: [{ amount: '21.78', method: 'cash' }],
+    })
+    const sale = await sales.getSale(ownerId, saleId)
+    expect(sale).toMatchObject({
+      subtotal: '20',
+      discountTotal: '2',
+      taxTotal: '1.98',
+      additionalRate: '10',
+      additionalTotal: '1.8',
+      total: '21.78',
+    })
+
+    await sales.returnSale(ownerId, saleId, {
+      reason: 'Full return',
+      items: [{ saleItemId: sale.items[0]!.id, quantity: '2' }],
+    })
+    expect((await sales.getSale(ownerId, saleId)).returns).toMatchObject([{
+      refundTotal: '21.78',
+      items: [{ refundAmount: '21.78' }],
+    }])
+
+    await sales.setTaxConfiguration(ownerId, {
+      branchId,
+      taxRate: '10',
+      taxMode: 'inclusive',
+    })
+    const inclusiveSaleId = await sales.createSale(ownerId, {
+      warehouseId,
+      customerId,
+      additionalRate: '10',
+      items: [{ productId, unitId, quantity: '1' }],
+      payments: [{ amount: '11', method: 'cash' }],
+    })
+    expect(await sales.getSale(ownerId, inclusiveSaleId)).toMatchObject({
+      taxMode: 'inclusive',
+      additionalRate: '10',
+      additionalTotal: '1',
+      taxTotal: '1',
+      total: '11',
+    })
+  })
+
   it('converts selected units to base stock and derives the default price for that unit', async () => {
     const carton = (await catalog.listUnits(ownerId)).find(
       (unit) => unit.code === 'CTN',
@@ -295,6 +370,14 @@ describe('sales and offline POS services', () => {
         items: [{ productId, unitId, quantity: '1' }],
       }),
     ).rejects.toThrow(/customer is required/)
+    await expect(
+      sales.createSale(ownerId, {
+        warehouseId,
+        additionalRate: '10',
+        items: [{ productId, unitId, quantity: '1' }],
+        payments: [{ amount: '11', method: 'cash' }],
+      }),
+    ).rejects.toThrow(/additional rate requires a selected customer/)
     await expect(
       sales.createSale(ownerId, {
         warehouseId,

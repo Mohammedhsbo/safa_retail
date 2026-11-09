@@ -275,6 +275,30 @@ describe('business configuration and organization', () => {
     ).rejects.toThrow(OrganizationError)
   })
 
+  it('accepts warehouse codes using Arabic text and punctuation', async () => {
+    await createOwner()
+    const branchId = await organization.createBranch(ownerId, {
+      code: 'BRANCH',
+      name: 'Code Test Branch',
+    })
+    const warehouseId = await organization.createWarehouse(ownerId, {
+      branchId,
+      code: 'مخزن#١',
+      name: 'Arabic Code Warehouse',
+      warehouseType: 'fabrics',
+    })
+
+    await expect(organization.listWarehouses(ownerId)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: warehouseId,
+          code: 'مخزن#١',
+          name: 'Arabic Code Warehouse',
+        }),
+      ]),
+    )
+  })
+
   it('lists only active locations assigned to the signed-in user', async () => {
     await createOwner()
     const assignedBranchId = await organization.createBranch(ownerId, {

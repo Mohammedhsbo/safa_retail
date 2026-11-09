@@ -71,6 +71,72 @@ const permissionDescriptions: Record<PermissionCode, string> = {
   'manufacturing.manage': 'Manage manufacturing',
 }
 
+const defaultRolePermissions: Partial<
+  Record<SystemRoleCode, readonly PermissionCode[]>
+> = {
+  general_manager: permissionCodes.filter(
+    (permission) => permission !== 'settings.manage',
+  ),
+  branch_manager: [
+    'products.read',
+    'products.create',
+    'products.update',
+    'sales.read',
+    'sales.create',
+    'sales.cancel',
+    'sales.discount',
+    'sales.returns',
+    'purchases.read',
+    'purchases.create',
+    'purchases.returns',
+    'inventory.read',
+    'inventory.adjust',
+    'inventory.transfer',
+    'inventory.count',
+    'customers.manage',
+    'suppliers.manage',
+    'accounting.read',
+    'reports.read',
+    'manufacturing.manage',
+  ],
+  warehouse_manager: [
+    'products.read',
+    'purchases.read',
+    'inventory.read',
+    'inventory.adjust',
+    'inventory.transfer',
+    'inventory.count',
+    'reports.read',
+  ],
+  sales_employee: [
+    'products.read',
+    'sales.read',
+    'sales.create',
+    'customers.manage',
+  ],
+  purchasing_employee: [
+    'products.read',
+    'purchases.read',
+    'purchases.create',
+    'purchases.returns',
+    'inventory.read',
+    'suppliers.manage',
+  ],
+  accountant: [
+    'sales.read',
+    'purchases.read',
+    'inventory.read',
+    'accounting.read',
+    'accounting.manage',
+    'reports.read',
+  ],
+  manufacturing_employee: [
+    'products.read',
+    'inventory.read',
+    'manufacturing.manage',
+  ],
+}
+
 export class AuthRepository {
   private readonly database: SqlExecutor
   private readonly sqliteDatabase: SqlDatabase
@@ -112,6 +178,33 @@ export class AuthRepository {
         await transaction.run(
           'INSERT INTO role_permissions (role_id, permission_code) VALUES (?, ?) ON CONFLICT(role_id, permission_code) DO NOTHING',
           [ownerRoleId, code],
+        )
+      }
+
+      const defaultsKey = 'authorization.role_defaults.v1'
+      const [defaultsInitialized] = await transaction.query<{ value: string }>(
+        'SELECT value FROM application_settings WHERE key = ?',
+        [defaultsKey],
+      )
+      if (!defaultsInitialized) {
+        for (const [roleCode, rolePermissions] of Object.entries(
+          defaultRolePermissions,
+        ) as Array<[SystemRoleCode, readonly PermissionCode[]]>) {
+          const role = await this.getRoleByCode(roleCode, transaction)
+          if (
+            role &&
+            (await this.getRolePermissionCodes(role.id, transaction)).length === 0
+          ) {
+            await this.setRolePermissions(
+              role.id,
+              rolePermissions,
+              transaction,
+            )
+          }
+        }
+        await transaction.run(
+          'INSERT INTO application_settings (key, value, updated_at) VALUES (?, ?, ?)',
+          [defaultsKey, 'true', createdAt],
         )
       }
     })

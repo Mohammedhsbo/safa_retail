@@ -65,6 +65,7 @@ describe('SQLite database foundation', () => {
       'product_branch_availability',
       'product_images',
       'product_unit_conversions',
+      'product_warehouse_availability',
       'production_outputs',
       'production_stages',
       'products',
@@ -98,6 +99,8 @@ describe('SQLite database foundation', () => {
       { version: 3 },
       { version: 4 },
       { version: 5 },
+      { version: 6 },
+      { version: 7 },
     ])
     expect(await settings.get('application.locale')).toBe('ar')
     expect(await settings.get('setup.completed')).toBe('false')
@@ -126,7 +129,7 @@ describe('SQLite database foundation', () => {
   it('rolls back a failed migration without leaving partial schema changes', async () => {
     await applyMigrations(database)
     const failingMigration = {
-      version: 6,
+      version: 7,
       name: 'failing_migration',
       statements: [
         'CREATE TABLE migration_probe (id TEXT PRIMARY KEY)',
@@ -151,6 +154,8 @@ describe('SQLite database foundation', () => {
       { version: 3 },
       { version: 4 },
       { version: 5 },
+      { version: 6 },
+      { version: 7 },
     ])
   })
 
@@ -187,10 +192,14 @@ describe('SQLite database foundation', () => {
       { version: 3 },
       { version: 4 },
       { version: 5 },
+      { version: 6 },
+      { version: 7 },
     ])
     expect(movementColumns.map((column) => column.name)).toContain('unit_cost')
     expect(saleColumns.map((column) => column.name)).toContain('tax_rate')
     expect(saleColumns.map((column) => column.name)).toContain('tax_mode')
+    expect(saleColumns.map((column) => column.name)).toContain('additional_rate')
+    expect(saleColumns.map((column) => column.name)).toContain('additional_total')
     const purchaseColumns = await database.query<{ name: string }>(
       'PRAGMA table_info(purchases)',
     )

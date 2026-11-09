@@ -238,10 +238,21 @@ export class ManufacturingService {
     return orderId
   }
 
-  async listOrders(actorId: string, branchId: string): Promise<ManufacturingOrder[]> {
+  async listOrders(
+    actorId: string,
+    branchId: string,
+    warehouseId?: string,
+  ): Promise<ManufacturingOrder[]> {
     await this.access.assertPermission(actorId, 'manufacturing.manage')
     await this.assertBranchScope(actorId, branchId, this.database)
-    const rows = await this.repository.listOrders(branchId)
+    if (warehouseId) {
+      const location = await this.assertWarehouseScope(actorId, warehouseId, this.database)
+      if (location.branchId !== branchId) {
+        throw new ManufacturingError('The selected warehouse does not belong to the branch')
+      }
+    }
+    const rows = (await this.repository.listOrders(branchId))
+      .filter((row) => !warehouseId || row.warehouse_id === warehouseId)
     const orders: ManufacturingOrder[] = []
     for (const row of rows) {
       if (await this.canAccessOrder(actorId, row, this.database)) {
@@ -766,6 +777,11 @@ export class ManufacturingService {
       warehouse.branch_status !== 'active'
     ) {
       throw new ManufacturingError('The warehouse or its branch is inactive')
+    }
+    if (warehouse.warehouse_type !== 'clothing_manufacturing') {
+      throw new ManufacturingError(
+        'Manufacturing is only available in clothing manufacturing warehouses',
+      )
     }
     const branchId = this.rowString(warehouse.branch_id)
     await this.access.assertWarehouseAccess(actorId, warehouseId, branchId, executor)

@@ -55,6 +55,27 @@ export class InventoryRepository {
     )
   }
 
+  async ensureProductWarehouseAvailabilityFromBranch(
+    productId: string,
+    warehouseId: string,
+    now: string,
+    executor: SqlExecutor = this.database,
+  ): Promise<void> {
+    await executor.run(
+      `INSERT INTO product_warehouse_availability
+         (product_id, branch_id, warehouse_id, purchase_price, selling_price,
+          minimum_stock, status, created_at, updated_at)
+       SELECT a.product_id, a.branch_id, w.id, a.purchase_price, a.selling_price,
+              a.minimum_stock, 'active', ?, ?
+       FROM product_branch_availability a
+       JOIN warehouses w ON w.id = ? AND w.branch_id = a.branch_id
+       WHERE a.product_id = ? AND a.status = 'active'
+         AND w.status = 'active' AND w.is_active = TRUE
+       ON CONFLICT (product_id, warehouse_id) DO NOTHING`,
+      [now, now, warehouseId, productId],
+    )
+  }
+
   async getProductUnit(
     productId: string,
     unitId: string,
@@ -173,11 +194,10 @@ export class InventoryRepository {
               ib.average_unit_cost, ib.updated_at
        FROM inventory_balances ib
        JOIN products p ON p.id = ib.product_id
-       JOIN warehouses w ON w.id = ib.warehouse_id
        WHERE ib.warehouse_id = ?
          AND EXISTS (
-           SELECT 1 FROM product_branch_availability a
-           WHERE a.product_id = ib.product_id AND a.branch_id = w.branch_id
+           SELECT 1 FROM product_warehouse_availability a
+           WHERE a.product_id = ib.product_id AND a.warehouse_id = ib.warehouse_id
          )
        ORDER BY p.name, p.sku`,
       [warehouseId],
@@ -202,11 +222,10 @@ export class InventoryRepository {
               m.source_type, m.source_id, m.occurred_at, m.created_by
        FROM inventory_movements m
        JOIN products p ON p.id = m.product_id
-       JOIN warehouses w ON w.id = m.warehouse_id
        WHERE m.warehouse_id = ? ${filter}
          AND EXISTS (
-           SELECT 1 FROM product_branch_availability a
-           WHERE a.product_id = m.product_id AND a.branch_id = w.branch_id
+           SELECT 1 FROM product_warehouse_availability a
+           WHERE a.product_id = m.product_id AND a.warehouse_id = m.warehouse_id
          )
        ORDER BY m.occurred_at DESC, m.id DESC
        LIMIT ? OFFSET ?`,
@@ -224,9 +243,8 @@ export class InventoryRepository {
               ib.updated_at
        FROM inventory_balances ib
        JOIN products p ON p.id = ib.product_id
-       JOIN warehouses w ON w.id = ib.warehouse_id
-       JOIN product_branch_availability a
-         ON a.product_id = ib.product_id AND a.branch_id = w.branch_id
+       JOIN product_warehouse_availability a
+         ON a.product_id = ib.product_id AND a.warehouse_id = ib.warehouse_id
        WHERE ib.warehouse_id = ?
        ORDER BY p.name, p.sku`,
       [warehouseId],

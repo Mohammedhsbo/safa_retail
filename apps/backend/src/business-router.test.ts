@@ -132,7 +132,11 @@ describe('business API workspace selection', () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ data: [] })
-    expect(mocks.listProducts).toHaveBeenCalledWith('user-id', 'branch-id')
+    expect(mocks.listProducts).toHaveBeenCalledWith(
+      'user-id',
+      'branch-id',
+      'warehouse-id',
+    )
   })
 
   it('rejects a selected warehouse that belongs to a different branch', async () => {

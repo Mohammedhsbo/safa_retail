@@ -146,9 +146,9 @@ describe('suppliers and purchase workflows', () => {
       total: '28',
       outstandingBalance: '0',
     })
-    expect(
-      (await inventory.getBalance(ownerId, warehouseId, productId)).quantity,
-    ).toBe('0')
+    await expect(
+      inventory.getBalance(ownerId, warehouseId, productId),
+    ).rejects.toThrow(/selected warehouse/)
     await expect(
       purchases.addSupplierPayment(ownerId, purchaseId, {
         amount: '1',

@@ -7,7 +7,7 @@ const maximumBackupBytes = 256 * 1024 * 1024
 const backupFormat = 'safa-retail-postgres-backup'
 const backupFormatVersion = 1
 const currentSchemaNumber = 2
-const schemaVersion = '20261108010000_preserve_sqlite_checks'
+const schemaVersion = '20261203000000_product_warehouse_availability'
 const scheduleKey = 'backup.schedule'
 
 const scheduleInputSchema = z.object({

@@ -129,3 +129,41 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body,
+  html {
+    min-width: 0;
+    background: white;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .pos-print-receipt {
+    display: block !important;
+  }
+
+  .pos-print-receipt,
+  .pos-print-receipt * {
+    visibility: visible !important;
+  }
+
+  .pos-print-receipt {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    border: 0 !important;
+    color: #000 !important;
+    background: #fff !important;
+  }
+}
+
+.pos-print-receipt {
+  display: none;
+}

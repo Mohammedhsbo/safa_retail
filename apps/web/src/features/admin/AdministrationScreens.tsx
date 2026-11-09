@@ -425,6 +425,12 @@ export function RolesScreen() {
       })}
     </section>
 
+    {!selectedRole && canManage && (
+      <Card className="p-5 text-sm font-semibold text-[var(--muted)]">
+        {t('admin.selectRole')}
+      </Card>
+    )}
+
     {selectedRole && (
       <Card className="overflow-hidden">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface)] p-4 sm:p-6">

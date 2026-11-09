@@ -21,6 +21,11 @@ const user: AuthenticatedUser = {
   warehouseIds: ['warehouse-1'],
 }
 
+const adminUser: AuthenticatedUser = {
+  ...user,
+  roleCodes: ['system_owner'],
+}
+
 const branch: Branch = {
   id: 'branch-1',
   code: 'NORTH',
@@ -68,6 +73,16 @@ function createServices(
     services: {
       organization,
       authentication,
+      catalog: {
+        listUnits: vi.fn(async () => []),
+        initializeStandardUnits: vi.fn(async () => {}),
+        listProducts: vi.fn(async () => []),
+        listCategories: vi.fn(async () => []),
+        listBrands: vi.fn(async () => []),
+      },
+      manufacturing: {
+        listOrders: vi.fn(async () => []),
+      },
     } as unknown as RetailApplicationServices,
     organization,
     authentication,
@@ -221,6 +236,111 @@ describe('authenticated workspace navigation', () => {
         warehouseId: null,
       })
     })
+  })
+
+  it('lets admins change branch and then select a warehouse from the account menu', async () => {
+    const { services } = createServices()
+    useSessionStore.getState().establishSession(adminUser)
+    useWorkspaceStore.getState().setBranch(branch.id)
+    useWorkspaceStore.getState().setWarehouse(warehouse.id)
+    renderApplication(services, '/dashboard')
+    const actor = userEvent.setup()
+
+    await screen.findByRole('link', { name: 'Dashboard' })
+    await actor.click(screen.getByRole('button', { name: /Operator/ }))
+    await actor.click(screen.getByRole('menuitem', { name: 'Change location' }))
+
+    expect(await screen.findByRole('heading', { name: 'Select a branch' }))
+      .toBeInTheDocument()
+    expect(useWorkspaceStore.getState()).toMatchObject({
+      branchId: null,
+      warehouseId: null,
+    })
+
+    await actor.click(await screen.findByRole('button', { name: /North Branch/ }))
+    expect(await screen.findByRole('heading', { name: 'Select a warehouse' }))
+      .toBeInTheDocument()
+    await actor.click(await screen.findByRole('button', { name: /Main Warehouse/ }))
+    expect(await screen.findByRole('link', { name: 'Dashboard' }))
+      .toBeInTheDocument()
+    expect(useWorkspaceStore.getState()).toMatchObject({
+      branchId: branch.id,
+      warehouseId: warehouse.id,
+    })
+  })
+
+  it('keeps assigned users in their selected location and hides admin location controls', async () => {
+    const { services } = createServices()
+    useSessionStore.getState().establishSession(user)
+    useWorkspaceStore.getState().setBranch(branch.id)
+    useWorkspaceStore.getState().setWarehouse(warehouse.id)
+    renderApplication(services, '/branch-selection')
+    const actor = userEvent.setup()
+
+    expect(await screen.findByRole('link', { name: 'Dashboard' }))
+      .toBeInTheDocument()
+    expect(useWorkspaceStore.getState()).toMatchObject({
+      branchId: branch.id,
+      warehouseId: warehouse.id,
+    })
+    expect(screen.queryByRole('link', { name: 'Branches' })).not.toBeInTheDocument()
+
+    await actor.click(screen.getByRole('button', { name: /Operator/ }))
+    expect(screen.queryByRole('menuitem', { name: 'Change location' }))
+      .not.toBeInTheDocument()
+  })
+
+  it('only exposes manufacturing to users in clothing warehouses', async () => {
+    const manufacturingUser = {
+      ...user,
+      permissions: ['manufacturing.manage'],
+    }
+    const fabricWarehouse = { ...warehouse, warehouseType: 'fabrics' as const }
+    const { services } = createServices([branch], [fabricWarehouse])
+    useSessionStore.getState().establishSession(manufacturingUser)
+    useWorkspaceStore.getState().setBranch(branch.id)
+    useWorkspaceStore.getState().setWarehouse(fabricWarehouse.id)
+    renderApplication(services, '/manufacturing')
+
+    await screen.findByRole('link', { name: 'Dashboard' })
+    expect(screen.queryByRole('link', { name: 'Manufacturing' }))
+      .not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Manufacturing orders' }))
+      .not.toBeInTheDocument()
+  })
+
+  it('shows manufacturing for assigned clothing warehouses', async () => {
+    const manufacturingUser = {
+      ...user,
+      permissions: ['manufacturing.manage'],
+    }
+    const clothingWarehouse = {
+      ...warehouse,
+      warehouseType: 'clothing_manufacturing' as const,
+    }
+    const { services } = createServices([branch], [clothingWarehouse])
+    useSessionStore.getState().establishSession(manufacturingUser)
+    useWorkspaceStore.getState().setBranch(branch.id)
+    useWorkspaceStore.getState().setWarehouse(clothingWarehouse.id)
+    renderApplication(services, '/manufacturing')
+
+    expect(await screen.findByRole('heading', { name: 'Manufacturing orders' }))
+      .toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Manufacturing' }))
+      .toBeInTheDocument()
+  })
+
+  it('redirects assigned users away from branch management when opening its URL directly', async () => {
+    const { services } = createServices()
+    useSessionStore.getState().establishSession(user)
+    useWorkspaceStore.getState().setBranch(branch.id)
+    useWorkspaceStore.getState().setWarehouse(warehouse.id)
+    renderApplication(services, '/branches')
+
+    expect(await screen.findByRole('heading', { name: 'Welcome, Operator' }))
+      .toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Branches and warehouses' }))
+      .not.toBeInTheDocument()
   })
 
   it('keeps protected navigation responsive without revalidating the workspace', async () => {

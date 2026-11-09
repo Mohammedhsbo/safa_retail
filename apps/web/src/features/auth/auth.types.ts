@@ -76,6 +76,12 @@ export interface AuthenticatedUser {
   warehouseIds: readonly string[]
 }
 
+export function isGlobalBranchAdmin(roleCodes: readonly string[]): boolean {
+  return roleCodes.some((role) =>
+    ['system_owner', 'general_manager', 'admin'].includes(role),
+  )
+}
+
 export interface PasswordHasher {
   hash(password: string): Promise<string>
   verify(password: string, encodedHash: string): Promise<boolean>
