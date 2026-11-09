@@ -222,4 +222,27 @@ describe('authenticated workspace navigation', () => {
       })
     })
   })
+
+  it('keeps protected navigation responsive without revalidating the workspace', async () => {
+    const productUser = { ...user, permissions: ['products.read'] }
+    const { services, organization } = createServices()
+    useSessionStore.getState().establishSession(productUser)
+    useWorkspaceStore.getState().setBranch(branch.id)
+    useWorkspaceStore.getState().setWarehouse(warehouse.id)
+    renderApplication(services, '/dashboard')
+
+    await screen.findByRole('link', { name: 'Products' })
+    await waitFor(() => {
+      expect(organization.listAccessibleBranches).toHaveBeenCalledTimes(3)
+      expect(organization.listAccessibleWarehouses).toHaveBeenCalledTimes(3)
+    })
+
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Products' }))
+
+    expect(await screen.findByRole('heading', { name: 'Products' })).toBeInTheDocument()
+    expect(screen.queryByText('Validating your branch and warehouse access...'))
+      .not.toBeInTheDocument()
+    expect(organization.listAccessibleBranches).toHaveBeenCalledTimes(3)
+    expect(organization.listAccessibleWarehouses).toHaveBeenCalledTimes(3)
+  })
 })

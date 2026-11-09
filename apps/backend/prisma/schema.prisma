@@ -49,6 +49,7 @@ model branches {
   user_branch_access                                       user_branch_access[]
   warehouses                                               warehouses[]
   product_branch_availability                              product_branch_availability[]
+  product_warehouse_availability                           product_warehouse_availability[]
 }
 
 model brands {
@@ -394,6 +395,7 @@ model products {
   product_unit_conversions product_unit_conversions[]
   production_outputs       production_outputs[]
   product_branch_availability product_branch_availability[]
+  product_warehouse_availability product_warehouse_availability[]
   measurement_units        measurement_units          @relation(fields: [base_unit_id], references: [id], onUpdate: NoAction)
   brands                   brands?                    @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   categories               categories?                @relation(fields: [category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -788,6 +790,7 @@ model users {
   manufacturing_orders_manufacturing_orders_approved_byTousers manufacturing_orders[]  @relation("manufacturing_orders_approved_byTousers")
   manufacturing_orders_manufacturing_orders_created_byTousers  manufacturing_orders[]  @relation("manufacturing_orders_created_byTousers")
   production_outputs                                           production_outputs[]
+  product_warehouse_availability product_warehouse_availability[]
   purchase_payments                                            purchase_payments[]
   purchase_returns                                             purchase_returns[]
   purchases                                                    purchases[]

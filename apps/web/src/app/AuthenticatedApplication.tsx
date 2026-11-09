@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Navigate, NavLink, Outlet, Route, Routes } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowDownRight, ArrowUpRight, Boxes, ChartNoAxesCombined, CircleDollarSign, ClipboardList, PackageSearch, ReceiptText, ShoppingCart, TrendingUp } from 'lucide-react'
 import { useRetailApplicationServices } from './RetailApplicationServices'
@@ -116,10 +116,6 @@ export function AuthenticatedApplication({
       <Route element={<WorkspaceGuard branchId={branchId} warehouseId={warehouseId} />}>
         <Route element={<AuthenticatedLayout />}>
           <Route path="/branches" element={<BranchesManagementScreen />} />
-        </Route>
-      </Route>
-      <Route element={<WorkspaceGuard branchId={branchId} warehouseId={warehouseId} />}>
-        <Route element={<AuthenticatedLayout />}>
           <Route path="/" element={<Navigate replace to="/dashboard" />} />
           <Route path="/profile" element={<AccountProfileScreen user={user} />} />
           <Route path="/dashboard" element={<DashboardScreen />} />
@@ -241,7 +237,6 @@ function WorkspaceGuard({
   warehouseId: string | null
 }) {
   const { t } = useTranslation()
-  const { pathname } = useLocation()
   const { organization } = useRetailApplicationServices()
   const user = useSessionStore((state) => state.user)
   const clearWorkspace = useWorkspaceStore((state) => state.clearWorkspace)
@@ -252,7 +247,7 @@ function WorkspaceGuard({
     message?: string
   } | null>(null)
   const [attempt, setAttempt] = useState(0)
-  const key = `${pathname}:${branchId ?? ''}:${warehouseId ?? ''}`
+  const key = `${user?.id ?? ''}:${branchId ?? ''}:${warehouseId ?? ''}`
 
   useEffect(() => {
     if (!user || !branchId || !warehouseId) return
